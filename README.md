@@ -3,7 +3,9 @@
 This Arduino program controls a retro-style dot-matrix display, presenting various values received from an MQTT server. The primary focus is on showcasing Speeduino ECU parameters, GPS data, lap times, etc. The display is managed using the Parola library.
 Created as a personal project to drive a ESP32 based system in the glovebox of my project car (Golf mk2, hence the name).
 
-!NOTE!  Please note, this is raw work in progress - there is debug code, that generates MQTT RPM messages for testing and it has for now been working only in a rough prototype. If required, modify as needed to wor for any implementation.
+**Note** For GPS data it currently is tested to work in pair with https://github.com/askrejans/gps-to-mqtt project.
+
+!NOTE!  Please note, this is raw work in progress, made and tested only specifically for implementation in my car project. If required, modify as needed to wor for any implementation.
 
 ## Features
 - **Parola Library:** Utilizes the Parola library ([GitHub Link](https://github.com/MajicDesigns/MD_Parola)) for effective control of the dot-matrix display.

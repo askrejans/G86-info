@@ -38,6 +38,10 @@ struct cfgParameter_t {
 //flag for saving data
 bool shouldSaveConfig = false;
 
+//Transform helper variables
+unsigned long lastBlinkMillis = 0;  // Variable to store the last time the colon was blinked for time
+bool colonVisible = true;           // Flag to track the visibility of the colon for time
+
 // LED matrix configuration
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 4
@@ -272,22 +276,26 @@ MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet);
 
 // Menu definition
 const PROGMEM MD_Menu::mnuHeader_t mnuHdr[] = {
-  { 8, "Menu>>>", 8, 11, 0 },
+  { 7, "Menu>>>", 7, 11, 0 },
 };
 
 const PROGMEM MD_Menu::mnuItem_t mnuItm[] = {
-  { 9, "Value", MD_Menu::MNU_INPUT, 9 },
-  { 10, "Pos", MD_Menu::MNU_INPUT, 10 },
-  { 11, "Brt", MD_Menu::MNU_INPUT, 11 },
+  { 8, "ECU", MD_Menu::MNU_INPUT, 8 },
+  { 9, "GPS", MD_Menu::MNU_INPUT, 9 },
+  { 10, "POS", MD_Menu::MNU_INPUT, 10 },
+  { 11, "BRT", MD_Menu::MNU_INPUT, 11 },
 };
 
-//Car params menu
-const PROGMEM char listI[] = "RPM|TMP|LMD|SPD|LCT|TM1|TM2|DST|VE1|ENR|IET|FAN";
+//Car ECU params menu
+const PROGMEM char listECU[] = "RPM|TMP|LMD|LCT|TM1|TM2|DST|VE1|ENR|IET|FAN";
+//GPS params menu
+const PROGMEM char listGPS[] = "SPD|TME|DTE|LAT|LNG|ALT|CRS|QTY";
 //Text align options
 const PROGMEM char listAlign[] = "L|C|R";
 
 const PROGMEM MD_Menu::mnuInput_t mnuInp[] = {
-  { 9, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listI },
+  { 8, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listECU },
+  { 9, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listGPS },
   { 10, "P", MD_Menu::INP_LIST, mnuValueRqst, 1, 0, 0, 0, 0, 0, listAlign },
   { 11, "B", MD_Menu::INP_INT, mnuValueRqst, 2, 0, 0, 15, 0, 10, nullptr },
 };
@@ -324,12 +332,64 @@ void paramLoad(void) {
   }
 }
 
-//Process MQTT message receive
+//Process MQTT message receive and apply transforms where needed
 void messageReceived(String& topic, String& payload) {
+  // Extract the last two segments from the MQTT topic
+  int lastSlashIndex = topic.lastIndexOf('/');
+  if (lastSlashIndex != -1) {
+    String lastSegment = topic.substring(lastSlashIndex + 1);
+
+    int secondLastSlashIndex = topic.lastIndexOf('/', lastSlashIndex - 1);
+    if (secondLastSlashIndex != -1) {
+      String secondLastSegment = topic.substring(secondLastSlashIndex + 1, lastSlashIndex);
+
+      // Switch between the last two segments
+      if (secondLastSegment == "GPS" && lastSegment == "TME") {
+        transformTime(payload);
+      } else if (secondLastSegment == "GPS" && lastSegment == "DTE") {
+        // Remove dots between values, add slash, remove year. Incoming format dd.mm.yyyy
+        payload.replace(".", "");
+        String day = payload.substring(0, 2);
+        String month = payload.substring(2, 4);
+        payload = day + "/" + month;
+      } else if (secondLastSegment == "GPS" && lastSegment == "SPD") {
+        // Round the speed to the closest 1kmh + add kmh string
+        float speed = payload.toFloat();
+        payload = String(int(speed)) + "kmh";
+      } else if (secondLastSegment == "GPS" && lastSegment == "ALT") {
+        payload = payload + "m";
+      }
+    }
+  }
   // Convert String to char array
   strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);
   newMessage[sizeof(newMessage) - 1] = '\0';  // Ensure null-termination
   newMessageAvailable = true;
+}
+
+void transformTime(String& timeString) {
+  // Check if the timeString has the expected format "HH:MM:SS"
+  if (timeString.length() == 8 && timeString[2] == ':' && timeString[5] == ':') {
+    // Extract the "HH:MM" part
+    String transformedTime = timeString.substring(0, 5);
+
+    // Replace the original timeString with the transformed one
+    timeString = transformedTime;
+
+
+    if (!colonVisible) {
+      std::replace(timeString.begin(), timeString.end(), ':', ' ');
+    }
+
+    // Blink the colon every second
+    if (millis() - lastBlinkMillis >= 1000) {
+      lastBlinkMillis = millis();
+      colonVisible = !colonVisible;  // Toggle colon visibility
+    }
+
+  } else {
+    Serial.println("Invalid time format: " + timeString);
+  }
 }
 
 // Menu system callback functions
@@ -338,7 +398,12 @@ MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
 
   switch (id) {
 
-    case 9:  // Values
+    case 8:  // ECU Values
+      if (!bGet) {
+        mqtt.unsubscribe("/GOLF86/ECU/" + String(dataIndex));
+        mqtt.unsubscribe("/GOLF86/GPS/" + String(dataIndex));
+      }
+
       if (bGet) {
         if (dataIndex == "RPM") v.value = 0;
         else if (dataIndex == "TMP") v.value = 1;
@@ -386,7 +451,46 @@ MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
         newMessageAvailable = true;
       }
       break;
-      newMessageAvailable = true;
+    case 9:  // GPS Values
+      if (!bGet) {
+        mqtt.unsubscribe("/GOLF86/ECU/" + String(dataIndex));
+        mqtt.unsubscribe("/GOLF86/GPS/" + String(dataIndex));
+      }
+      if (bGet) {
+        if (dataIndex == "SPD") v.value = 0;
+        else if (dataIndex == "TME") v.value = 1;
+        else if (dataIndex == "DTE") v.value = 2;
+        else if (dataIndex == "LAT") v.value = 3;
+        else if (dataIndex == "LNG") v.value = 4;
+        else if (dataIndex == "ALT") v.value = 5;
+        else if (dataIndex == "CRS") v.value = 6;
+        else if (dataIndex == "QTY") v.value = 7;
+      } else {
+        if (v.value == 0) {
+          strcpy(dataIndex, "SPD");
+        } else if (v.value == 1) {
+          strcpy(dataIndex, "TME");
+        } else if (v.value == 2) {
+          strcpy(dataIndex, "DTE");
+        } else if (v.value == 3) {
+          strcpy(dataIndex, "LAT");
+        } else if (v.value == 4) {
+          strcpy(dataIndex, "LNG");
+        } else if (v.value == 5) {
+          strcpy(dataIndex, "ALT");
+        } else if (v.value == 6) {
+          strcpy(dataIndex, "CRS");
+        } else if (v.value == 7) {
+          strcpy(dataIndex, "QTY");
+        }
+        // subscribe to chosen MQTT topic
+        mqtt.subscribe("/GOLF86/GPS/" + String(dataIndex));
+        Serial.println("\nSubscribed to topic /GOLF86/GPS/" + String(dataIndex));
+        // set initial display value
+        strcpy(newMessage, "---");
+        newMessageAvailable = true;
+      }
+      break;
     case 10:  // Align
       if (bGet) {
         switch (Config.align) {
@@ -465,15 +569,11 @@ void setup() {
   //Display
   P.begin();
   P.setIntensity(Config.bright);
+  P.setCharSpacing(1);
 
   // Seed for random number generation
   srand(time(NULL));
 }
-
-//DEBUG
-unsigned long previousMillis = 0;
-const int rpmGenerationInterval = 200;  // Set the interval in milliseconds
-//END DEBUG
 
 void loop() {
 
@@ -501,20 +601,6 @@ void loop() {
 
   if (!M.isInMenu())  // not running the menu? do something else
   {
-    unsigned long currentMillis = millis();
-
-    // Check if the interval has passed
-    if (currentMillis - previousMillis >= rpmGenerationInterval) {
-      previousMillis = currentMillis;  // Save the current time for the next interval
-
-      // Generate a random RPM value between 500 and 2500
-      int randomRPM = rand() % (1000 - 1150 + 1) + 1000;
-
-      // Push to MQTT for tests
-      mqtt.publish("/GOLF86/ECU/RPM", String(randomRPM));
-    }
-
-
     // animate the display and check for a new message if ended
     if (P.displayAnimate()) {
       firstRun = false;

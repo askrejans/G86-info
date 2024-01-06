@@ -5,7 +5,7 @@ Created as a personal project to drive a ESP32 based system in the glovebox of m
 
 **Note** For GPS data it currently is tested to work in pair with https://github.com/askrejans/gps-to-mqtt project.
 
-!NOTE!  Please note, this is raw work in progress, made and tested only specifically for implementation in my car project. If required, modify as needed to wor for any implementation.
+!NOTE!  Please note, this is raw work in progress, made and tested only specifically for implementation in my car project. If required, modify as needed to for for any implementation.
 
 ## Features
 - **Parola Library:** Utilizes the Parola library ([GitHub Link](https://github.com/MajicDesigns/MD_Parola)) for effective control of the dot-matrix display.

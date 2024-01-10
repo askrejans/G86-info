@@ -1,6 +1,6 @@
-# Golf86-Info - Arduino ESP32 Dot Matrix Display Controller
+# Golf86-Info - Arduino ESP32 LED Matrix Display Controller
  
-This Arduino program controls a retro-style dot-matrix display, presenting various values received from an MQTT server. The primary focus is on showcasing Speeduino ECU parameters, GPS data, lap times, etc. The display is managed using the Parola library.
+This Arduino program controls a retro-style LED-matrix display, presenting various values received from an MQTT server. The primary focus is on showcasing Speeduino ECU parameters, GPS data, lap times, etc. The display is managed using the Parola library.
 Created as a personal project to drive a ESP32 based system in the glovebox of my project car (Golf mk2, hence the name).
 
 **Note** For GPS data it currently is tested to work in pair with https://github.com/askrejans/gps-to-mqtt project.
@@ -8,7 +8,7 @@ Created as a personal project to drive a ESP32 based system in the glovebox of m
 !NOTE!  Please note, this is raw work in progress, made and tested only specifically for implementation in my car project. If required, modify as needed to for for any implementation.
 
 ## Features
-- **Parola Library:** Utilizes the Parola library ([GitHub Link](https://github.com/MajicDesigns/MD_Parola)) for effective control of the dot-matrix display.
+- **Parola Library:** Utilizes the Parola library ([GitHub Link](https://github.com/MajicDesigns/MD_Parola)) for effective control of the LED-matrix display.
 - **Settings Menu:** Implements a settings menu, allowing users to configure ECU data, brightness, and alignment interactively.
 - **WiFi Connectivity:** Connects to WiFi using the WiFiManager library ([GitHub Link](https://github.com/tzapu/WiFiManager)) for hassle-free web-based configuration.
 - **MQTT Integration:** Utilizes MQTT library ([GitHub Link](https://github.com/256dpi/arduino-mqtt)) for collecting data from an MQTT server. Note: MQTT is currently supported without a password.

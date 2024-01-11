@@ -43,16 +43,9 @@ Created as a personal project to drive a ESP32 based system in the glovebox of m
   - Control (CTL) Pin: 27
 
 ## Setup
-1. Initialize serial communication with a baud rate of 115200.
+1. Setup hardware connections to defined pins
 2. Configure WiFi using the WiFiManager library for web-based configuration. AP default password: golf1986
-3. Load MQTT configuration parameters and establish a connection to the MQTT server.
-4. Set up navigation controls using a rotary encoder and an external switch.
-5. Initialize Parola for hardware SPI and set display intensity based on configuration.
-6. Define menu headers, items, and inputs for user interaction.
-7. Set up the menu system with navigation and display callbacks.
-8. Implement callback functions for saving and loading custom configuration parameters.
-9. Set up MQTT message reception and processing.
-10. Run the main loop, handling MQTT communication, menu navigation, and display updates.
+3. Save MQTT configuration parameters and establish a connection to the MQTT server.
 
 **Note:** Ensure that the required libraries are installed using the Arduino Library Manager.
 

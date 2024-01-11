@@ -44,7 +44,7 @@ Created as a personal project to drive a ESP32 based system in the glovebox of m
 
 ## Setup
 1. Initialize serial communication with a baud rate of 115200.
-2. Configure WiFi using the WiFiManager library for web-based configuration.
+2. Configure WiFi using the WiFiManager library for web-based configuration. AP default password: golf1986
 3. Load MQTT configuration parameters and establish a connection to the MQTT server.
 4. Set up navigation controls using a rotary encoder and an external switch.
 5. Initialize Parola for hardware SPI and set display intensity based on configuration.

@@ -287,7 +287,62 @@ const PROGMEM MD_Menu::mnuItem_t mnuItm[] = {
 };
 
 //Car ECU params menu
-const PROGMEM char listECU[] = "RPM|TMP|LMD|LCT|TM1|TM2|DST|VE1|ENR|IET|FAN";
+
+/*
+   Mapping of 3-letter values to their corresponding parameters in the Speeduino ECU data.
+
+   ECU Data Parameters:
+   RPM: Engine revolutions per minute
+   TMP: Throttle Position Sensor reading (0% to 100%)
+   LMD: Volumetric Efficiency (%)
+   LCT: Primary O2 sensor reading
+   TM1: Manifold Air Temperature sensor reading
+   TM2: Coolant Analog-to-Digital Conversion value
+   DST: Dwell time
+   VE1: Manifold Absolute Pressure sensor reading
+   ENR: Secondary O2 sensor reading
+   IET: Manifold Air Temperature Correction (%)
+   FAN: Warm-Up Enrichment Correction (%)
+   TPS: Total GammaE (%)
+   O2P: Air-Fuel Ratio Target
+   MAT: Pulse Width 1
+   CAD: Throttle Position Sensor Change per Second
+   DWL: Ignition Advance
+   MAP: Loops per Second
+   O2S: Free RAM
+   ITC: Boost Target
+   TAE: Boost Duty
+   COR: Spark
+   AFT: RPM DOT (assuming signed integer)
+   PW1: Ethanol Percentage
+   TPD: Flex Fuel Correction
+   ADV: Flex Fuel Ignition Correction
+   LPS: Idle Load
+   FRM: Test Outputs
+   BST: Barometric Pressure
+   BSD: CAN Input values (Combine bytes)
+   SPK: Throttle Position Sensor ADC value
+   RPD: Next Error code
+   ETH: Status 1
+   FLC: Engine status
+   FIC: Battery Temperature Correction
+   ILL: Battery voltage (scaled by 10)
+   TOF: EGO Correction
+   BAR: Warm-Up Enrichment Correction
+   CN1 to CN8: Secondary Load
+   TAD: Throttle Position Sensor ADC value
+   NER: Next Error code
+   STA: Status 1
+   ENG: Engine status
+   BTC: Battery Temperature Correction
+   BAT: Battery voltage (scaled by 10)
+   EGC: EGO Correction
+   WEC: Warm-Up Enrichment Correction
+   SCL: Secondary Load
+*/
+
+
+const PROGMEM char listECU[] = "RPM|TPS|VE|LCT|TM1|TM2|DST|VE1|ENR|IET|FAN|TMP|O2P|MAT|CAD|DWL|MAP|O2S|ITC|TAE|COR|AFT|PW1|TPD|ADV|LPS|FRM|BST|BSD|SPK|RPD|ETH|FLC|FIC|ILL|TOF|BAR|TAD|NER|STA|ENG|BTC|BAT|EGC|WEC|SCL";
 //GPS params menu
 const PROGMEM char listGPS[] = "SPD|TME|DTE|LAT|LNG|ALT|CRS|QTY";
 //Text align options
@@ -392,6 +447,11 @@ void transformTime(String& timeString) {
   }
 }
 
+// String array for ECU Data parameters
+const String ecuDataStrings[] = {"RPM", "TPS", "VE", "SPD", "LCT", "TM1", "TM2", "DST", "VE1", "ENR", "IET", "FAN", "TMP", "O2P", "MAT", "CAD", "DWL",
+                                     "MAP", "O2S", "ITC", "TAE", "COR", "AFT", "PW1", "TPD", "ADV", "LPS", "FRM", "BST", "BSD", "SPK", "RPD", "ETH", "FLC",
+                                     "FIC", "ILL", "TOF", "BAR", "TAD", "NER", "STA", "ENG", "BTC", "BAT", "EGC", "WEC", "SCL"};
+
 // Menu system callback functions
 MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
   static MD_Menu::value_t v;
@@ -405,56 +465,29 @@ MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
       }
 
       if (bGet) {
-        if (dataIndex == "RPM") v.value = 0;
-        else if (dataIndex == "TMP") v.value = 1;
-        else if (dataIndex == "LMD") v.value = 2;
-        else if (dataIndex == "SPD") v.value = 3;
-        else if (dataIndex == "LCT") v.value = 4;
-        else if (dataIndex == "TM1") v.value = 5;
-        else if (dataIndex == "TM2") v.value = 6;
-        else if (dataIndex == "DST") v.value = 7;
-        else if (dataIndex == "VE1") v.value = 8;
-        else if (dataIndex == "ENR") v.value = 9;
-        else if (dataIndex == "IET") v.value = 10;
-        else if (dataIndex == "FAN") v.value = 11;
-      } else {
-        if (v.value == 0) {
-          strcpy(dataIndex, "RPM");
-        } else if (v.value == 1) {
-          strcpy(dataIndex, "TMP");
-        } else if (v.value == 2) {
-          strcpy(dataIndex, "LMD");
-        } else if (v.value == 3) {
-          strcpy(dataIndex, "SPD");
-        } else if (v.value == 4) {
-          strcpy(dataIndex, "LCT");
-        } else if (v.value == 5) {
-          strcpy(dataIndex, "TM1");
-        } else if (v.value == 6) {
-          strcpy(dataIndex, "TM2");
-        } else if (v.value == 7) {
-          strcpy(dataIndex, "DST");
-        } else if (v.value == 8) {
-          strcpy(dataIndex, "VE1");
-        } else if (v.value == 9) {
-          strcpy(dataIndex, "ENR");
-        } else if (v.value == 10) {
-          strcpy(dataIndex, "IET");
-        } else if (v.value == 11) {
-          strcpy(dataIndex, "FAN");
+        // Convert dataIndex to index and set the value
+        for (int i = 0; i < sizeof(ecuDataStrings) / sizeof(ecuDataStrings[0]); ++i) {
+          if (String(dataIndex) == ecuDataStrings[i]) {
+            v.value = i;
+            break;
+          }
         }
-        //subscribe to chosen MQTT topic
+      } else {
+        strncpy(dataIndex, ecuDataStrings[v.value].c_str(), sizeof(dataIndex));
+        dataIndex[sizeof(dataIndex) - 1] = '\0';  // Ensure null-termination
+
+        // subscribe to chosen MQTT topic
         mqtt.subscribe("/GOLF86/ECU/" + String(dataIndex));
         Serial.println("\nSubscribed to topic /GOLF86/ECU/" + String(dataIndex));
-        //set initial display valu
+        // set initial display value
         strcpy(newMessage, "---");
         newMessageAvailable = true;
       }
       break;
     case 9:  // GPS Values
       if (!bGet) {
-        mqtt.unsubscribe("/GOLF86/ECU/" + String(dataIndex));
-        mqtt.unsubscribe("/GOLF86/GPS/" + String(dataIndex));
+        mqtt.unsubscribe(String("/GOLF86/ECU/") + String(dataIndex));
+        mqtt.unsubscribe(String("/GOLF86/GPS/") + String(dataIndex));
       }
       if (bGet) {
         if (dataIndex == "SPD") v.value = 0;
@@ -484,7 +517,8 @@ MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
           strcpy(dataIndex, "QTY");
         }
         // subscribe to chosen MQTT topic
-        mqtt.subscribe("/GOLF86/GPS/" + String(dataIndex));
+        mqtt.subscribe(String("/GOLF86/ECU/") + dataIndex);
+
         Serial.println("\nSubscribed to topic /GOLF86/GPS/" + String(dataIndex));
         // set initial display value
         strcpy(newMessage, "---");

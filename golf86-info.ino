@@ -9,23 +9,36 @@
 //
 //
 
-#include <Preferences.h>  // Preferences library for ESP32
-#include <SPI.h>          //SPI interface for display control
-#include <MD_Parola.h>    //Display library https://github.com/MajicDesigns/MD_Parola
-#include <MD_MAX72xx.h>   //Display driver https://github.com/MajicDesigns/MD_MAX72XX
-#include <MD_Menu.h>      //Settings menu https://github.com/MajicDesigns/MD_Menu
-#include <MD_REncoder.h>  //Rotary encoder lib https://github.com/MajicDesigns/MD_REncoder
-#include <MD_UISwitch.h>  //Physical swith lib https://github.com/MajicDesigns/MD_UISwitch
-#include <WiFiManager.h>  //Wifi Web manager/config + custom parameters https://github.com/tzapu/WiFiManager
-#include <MQTT.h>         //MQTT lib https://github.com/256dpi/arduino-mqtt
-#include <WiFi.h>         //Wifi lib for MQTT
+#include <Preferences.h>    // Preferences library for ESP32
+#include <SPI.h>            //SPI interface for display control
+#include <WiFiManager.h>    //Wifi Web manager/config + custom parameters https://github.com/tzapu/WiFiManager
+#include <MQTT.h>           //MQTT lib https://github.com/256dpi/arduino-mqtt
+#include <WiFi.h>           //Wifi lib for MQTT
+#include "Menu.h"           //Device menu and navigation
+#include "PacmanSprites.h"  //Sprites for startup animation
 
-// Constants for menu and EEPROM
-const uint16_t MENU_TIMEOUT = 3000;  // in milliseconds
+// Various constants
+const uint16_t MENU_TIMEOUT = 3000;         // in milliseconds
+const char* AP_NAME = "G86-INFO-AP";        //WIFI access point name
+const char* WIFI_PASSWORD = "golf1986";     //WIFI access point password
+const char* MQTT_CLIENT_NAME = "G86-INFO";  // MQTT client name
+const char* MQTT_TOPIC_BASE = "GOLF86";     // MQTT base topic for ECU and GPS data
+const char* WELCOME_MSG = "Golf'86";        //Welcome message
+
+// Extract this constant as it's being used in multiple places
+const String MQTT_ECU_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/ECU/";
+const String MQTT_GPS_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/GPS/";
+
 Preferences prefs;
 WiFiClient net;
 MQTTClient mqtt;
-extern MD_Menu M;
+
+#define HARDWARE_TYPE MD_MAX72XX::FC16_HW
+#define MAX_DEVICES 4
+#define CS_PIN 21
+
+// Display object for the main Parola display
+MD_Parola mainDisplay = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
 
 // Configuration structure for parameters
 struct cfgParameter_t {
@@ -41,30 +54,7 @@ bool shouldSaveConfig = false;
 //Transform helper variables
 unsigned long lastBlinkMillis = 0;  // Variable to store the last time the colon was blinked for time
 bool colonVisible = true;           // Flag to track the visibility of the colon for time
-
-// LED matrix configuration
-#define HARDWARE_TYPE MD_MAX72XX::FC16_HW
-#define MAX_DEVICES 4
-#define CS_PIN 21
-
-//Rotary switch and button init
-const uint8_t RE_A_PIN = 25;
-const uint8_t RE_B_PIN = 26;
-const uint8_t CTL_PIN = 27;
-
-MD_REncoder RE(RE_A_PIN, RE_B_PIN);
-MD_UISwitch_Digital swCtl(CTL_PIN);
-
-// Setup navigation with rotary encoder and switch
-void setupNav(void) {
-  RE.begin();
-  swCtl.begin();
-  swCtl.enableRepeat(false);
-  swCtl.enableLongPress(true);
-  swCtl.setPressTime(500);
-  swCtl.setLongPressTime(1000);
-  swCtl.enableDoublePress(false);
-}
+char dataIndex[] = "RPM";
 
 void setupWifi(void) {
   WiFiManagerParameter custom_mqtt_server("server", "MQTT server", Config.mqtt_server, 40);
@@ -84,7 +74,7 @@ void setupWifi(void) {
   // if connection fails, it starts an access point with the specified name ( "G86-INFO"),
   // then goes into a blocking loop awaiting configuration and will return success result
 
-  if (!wifiManager.autoConnect("G86-INFO-AP", "golf1986")) {
+  if (!wifiManager.autoConnect(AP_NAME, WIFI_PASSWORD)) {
     Serial.println("failed to connect and hit timeout");
     delay(3000);
     //reset and try again, or maybe put it to deep sleep
@@ -115,7 +105,7 @@ void setupMqtt(void) {
   mqtt.onMessage(messageReceived);
 
   Serial.print("\nconnecting to MQTT to " + String(Config.mqtt_server) + ":" + String(Config.mqtt_port));
-  while (!mqtt.connect("GOLF86INFO", "public", "public")) {
+  while (!mqtt.connect(MQTT_CLIENT_NAME, "public", "public")) {
     Serial.print(".");
     delay(1000);
   }
@@ -123,244 +113,111 @@ void setupMqtt(void) {
   Serial.println("\nMQTT connected!");
 }
 
-// Navigation callback function
-MD_Menu::userNavAction_t navigation(uint16_t& incDelta) {
-  uint8_t re = RE.read();
-
-  if (re != DIR_NONE) {
-    if (M.isInEdit()) incDelta = 1 << abs(RE.speed() >> 3);
-    return re == DIR_CCW ? MD_Menu::NAV_DEC : MD_Menu::NAV_INC;
-  }
-
-  switch (swCtl.read()) {
-    case MD_UISwitch::KEY_PRESS:
-      return MD_Menu::NAV_SEL;
-    case MD_UISwitch::KEY_LONGPRESS:
-      return MD_Menu::NAV_ESC;
-  }
-
-  return MD_Menu::NAV_NULL;
-}
-
-// MD_Parola initialization for hardware SPI
-MD_Parola P = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
-
 // Global message buffers shared by Serial and Scrolling functions
 #define BUF_SIZE 128
+char notAvailableMsg[] = "..N/A..";
 bool firstRun = true;
-char curMessage[BUF_SIZE] = { "..N/A.." };
-char newMessage[BUF_SIZE] = { "..N/A.." };
 bool newMessageAvailable = true;
-char dataValue[BUF_SIZE] = { "..N/A.." };
-char dataIndex[4] = { "RPM" };
+char curMessage[BUF_SIZE];
+char newMessage[BUF_SIZE];
+char dataValue[BUF_SIZE];
 
-//Pacman sprite for startup screen (from MD_Parola lib defaults)
-const uint8_t F_PMAN = 6;
-const uint8_t W_PMAN = 18;
-static const uint8_t PROGMEM pacman[F_PMAN * W_PMAN] =  // ghost pursued by a pacman
-  {
-    0x00,
-    0x81,
-    0xc3,
-    0xe7,
-    0xff,
-    0x7e,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x7b,
-    0xf3,
-    0x7f,
-    0xfb,
-    0x73,
-    0xfe,
-    0x00,
-    0x42,
-    0xe7,
-    0xe7,
-    0xff,
-    0xff,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x7b,
-    0xf3,
-    0x7f,
-    0xfb,
-    0x73,
-    0xfe,
-    0x24,
-    0x66,
-    0xe7,
-    0xff,
-    0xff,
-    0xff,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x7b,
-    0xf3,
-    0x7f,
-    0xfb,
-    0x73,
-    0xfe,
-    0x3c,
-    0x7e,
-    0xff,
-    0xff,
-    0xff,
-    0xff,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x73,
-    0xfb,
-    0x7f,
-    0xf3,
-    0x7b,
-    0xfe,
-    0x24,
-    0x66,
-    0xe7,
-    0xff,
-    0xff,
-    0xff,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x73,
-    0xfb,
-    0x7f,
-    0xf3,
-    0x7b,
-    0xfe,
-    0x00,
-    0x42,
-    0xe7,
-    0xe7,
-    0xff,
-    0xff,
-    0x7e,
-    0x3c,
-    0x00,
-    0x00,
-    0x00,
-    0xfe,
-    0x73,
-    0xfb,
-    0x7f,
-    0xf3,
-    0x7b,
-    0xfe,
-  };
+// String array for ECU and GPS Data parameters
+const String ecuDataStrings[] = { "RPM", "TPS", "VE1", "O2P", "AFT", "MAT", "CAD", "MAP", "BAT", "ADV", "PW1", "SPK", "DWL", "ILL", "BAR", "TAE", "NER", "ENG" };
+const String gpsDataStrings[] = { "SPD", "TME", "DTE", "LAT", "LNG", "ALT", "CRS", "QTY" };
 
-// Function prototypes for Navigation/Display
-bool display(MD_Menu::userDisplayAction_t, char*);
-MD_Menu::userNavAction_t navigation(uint16_t& incDelta);
-MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet);
+// Menu system callback functions
+MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
+  static MD_Menu::value_t v;
 
-// Menu definition
-const PROGMEM MD_Menu::mnuHeader_t mnuHdr[] = {
-  { 7, "Menu>>>", 7, 11, 0 },
-};
+  switch (id) {
 
-const PROGMEM MD_Menu::mnuItem_t mnuItm[] = {
-  { 8, "ECU", MD_Menu::MNU_INPUT, 8 },
-  { 9, "GPS", MD_Menu::MNU_INPUT, 9 },
-  { 10, "POS", MD_Menu::MNU_INPUT, 10 },
-  { 11, "BRT", MD_Menu::MNU_INPUT, 11 },
-};
+    case 2:  // ECU Values
+      if (!bGet) {
+        mqtt.unsubscribe(MQTT_ECU_TOPIC + String(dataIndex));
+        mqtt.unsubscribe(MQTT_GPS_TOPIC + String(dataIndex));
+      }
 
-//Car ECU params menu
+      if (bGet) {
+        // Convert dataIndex to index and set the value
+        for (int i = 0; i < sizeof(ecuDataStrings) / sizeof(ecuDataStrings[0]); ++i) {
+          if (String(dataIndex) == ecuDataStrings[i]) {
+            v.value = i;
+            break;
+          }
+        }
+      } else {
+        strncpy(dataIndex, ecuDataStrings[v.value].c_str(), sizeof(dataIndex));
+        dataIndex[sizeof(dataIndex) - 1] = '\0';  // Ensure null-termination
 
-/*
-   Mapping of 3-letter values to their corresponding parameters in the Speeduino ECU data.
+        // subscribe to chosen MQTT topic
+        mqtt.subscribe(MQTT_ECU_TOPIC + String(dataIndex));
+        Serial.println("\nSubscribed to topic: " + MQTT_ECU_TOPIC + String(dataIndex));
+        // set initial display value
+        strcpy(newMessage, "---");
+        newMessageAvailable = true;
+      }
+      break;
+    case 3:  // GPS Values
+      if (!bGet) {
+        mqtt.unsubscribe(MQTT_ECU_TOPIC + String(dataIndex));
+        mqtt.unsubscribe(MQTT_GPS_TOPIC + String(dataIndex));
+      }
+      if (bGet) {
+        for (int i = 0; i < sizeof(gpsDataStrings) / sizeof(gpsDataStrings[0]); ++i) {
+          if (String(dataIndex) == gpsDataStrings[i]) {
+            v.value = i;
+            break;
+          }
+        }
+      } else {
+        strncpy(dataIndex, gpsDataStrings[v.value].c_str(), sizeof(dataIndex));
+        dataIndex[sizeof(dataIndex) - 1] = '\0';  // Ensure null-termination
 
-   ECU Data Parameters:
-   RPM: Engine revolutions per minute
-   TMP: Throttle Position Sensor reading (0% to 100%)
-   LMD: Volumetric Efficiency (%)
-   LCT: Primary O2 sensor reading
-   TM1: Manifold Air Temperature sensor reading
-   TM2: Coolant Analog-to-Digital Conversion value
-   DST: Dwell time
-   VE1: Manifold Absolute Pressure sensor reading
-   ENR: Secondary O2 sensor reading
-   IET: Manifold Air Temperature Correction (%)
-   FAN: Warm-Up Enrichment Correction (%)
-   TPS: Total GammaE (%)
-   O2P: Air-Fuel Ratio Target
-   MAT: Pulse Width 1
-   CAD: Throttle Position Sensor Change per Second
-   DWL: Ignition Advance
-   MAP: Loops per Second
-   O2S: Free RAM
-   ITC: Boost Target
-   TAE: Boost Duty
-   COR: Spark
-   AFT: RPM DOT (assuming signed integer)
-   PW1: Ethanol Percentage
-   TPD: Flex Fuel Correction
-   ADV: Flex Fuel Ignition Correction
-   LPS: Idle Load
-   FRM: Test Outputs
-   BST: Barometric Pressure
-   BSD: CAN Input values (Combine bytes)
-   SPK: Throttle Position Sensor ADC value
-   RPD: Next Error code
-   ETH: Status 1
-   FLC: Engine status
-   FIC: Battery Temperature Correction
-   ILL: Battery voltage (scaled by 10)
-   TOF: EGO Correction
-   BAR: Warm-Up Enrichment Correction
-   CN1 to CN8: Secondary Load
-   TAD: Throttle Position Sensor ADC value
-   NER: Next Error code
-   STA: Status 1
-   ENG: Engine status
-   BTC: Battery Temperature Correction
-   BAT: Battery voltage (scaled by 10)
-   EGC: EGO Correction
-   WEC: Warm-Up Enrichment Correction
-   SCL: Secondary Load
-*/
+        // subscribe to chosen MQTT topic
+        mqtt.subscribe(MQTT_GPS_TOPIC + String(dataIndex));
 
+        Serial.println("\nSubscribed to topic: " + MQTT_GPS_TOPIC + String(dataIndex));
+        // set initial display value
+        strcpy(newMessage, "---");
+        newMessageAvailable = true;
+      }
+      break;
+    case 4:  // Text align
+      if (bGet) {
+        switch (Config.align) {
+          case PA_LEFT: v.value = 0; break;
+          case PA_CENTER: v.value = 1; break;
+          case PA_RIGHT: v.value = 2; break;
+        }
+      } else {
+        switch (v.value) {
+          case 0: Config.align = PA_LEFT; break;
+          case 1: Config.align = PA_CENTER; break;
+          case 2: Config.align = PA_RIGHT; break;
+        }
+        mainDisplay.setTextAlignment(Config.align);
+      }
+      break;
 
-const PROGMEM char listECU[] = "RPM|TPS|VE|LCT|TM1|TM2|DST|VE1|ENR|IET|FAN|TMP|O2P|MAT|CAD|DWL|MAP|O2S|ITC|TAE|COR|AFT|PW1|TPD|ADV|LPS|FRM|BST|BSD|SPK|RPD|ETH|FLC|FIC|ILL|TOF|BAR|TAD|NER|STA|ENG|BTC|BAT|EGC|WEC|SCL";
-//GPS params menu
-const PROGMEM char listGPS[] = "SPD|TME|DTE|LAT|LNG|ALT|CRS|QTY";
-//Text align options
-const PROGMEM char listAlign[] = "L|C|R";
+    case 5:  // Screen brightness
+      if (bGet)
+        v.value = Config.bright;
+      else {
+        Config.bright = v.value;
+        mainDisplay.setIntensity(Config.bright);
+      }
+      break;
+  }
 
-const PROGMEM MD_Menu::mnuInput_t mnuInp[] = {
-  { 8, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listECU },
-  { 9, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listGPS },
-  { 10, "P", MD_Menu::INP_LIST, mnuValueRqst, 1, 0, 0, 0, 0, 0, listAlign },
-  { 11, "B", MD_Menu::INP_INT, mnuValueRqst, 2, 0, 0, 15, 0, 10, nullptr },
-};
+  // if things were requested, return the buffer
+  if (bGet)
+    return &v;
+  else  // save the parameters
+    paramSave();
 
-// Menu global object
-MD_Menu M(navigation, display,          // user navigation and display
-          mnuHdr, ARRAY_SIZE(mnuHdr),   // menu header data
-          mnuItm, ARRAY_SIZE(mnuItm),   // menu item data
-          mnuInp, ARRAY_SIZE(mnuInp));  // menu input data
-
+  return nullptr;
+}
 
 //callback notifying us of the need to save config
 void saveConfigCallback() {
@@ -387,7 +244,6 @@ void paramLoad(void) {
   }
 }
 
-//Process MQTT message receive and apply transforms where needed
 void messageReceived(String& topic, String& payload) {
   // Extract the last two segments from the MQTT topic
   int lastSlashIndex = topic.lastIndexOf('/');
@@ -413,6 +269,18 @@ void messageReceived(String& topic, String& payload) {
         payload = String(int(speed)) + "kmh";
       } else if (secondLastSegment == "GPS" && lastSegment == "ALT") {
         payload = payload + "m";
+      } else if (secondLastSegment == "ECU" && (lastSegment == "TPS" || lastSegment == "VE1" || lastSegment == "TAE")) {
+        // Add '%' sign to the end of the numeric value
+        payload = payload + "%";
+      } else if (secondLastSegment == "ECU" && (lastSegment == "MAT" || lastSegment == "CAD")) {
+        // Add 'C'
+        payload = payload + "C";
+      } else if (secondLastSegment == "ECU" && lastSegment == "BAT") {
+        // Add 'V'
+        payload = payload + "V";
+      } else if (secondLastSegment == "ECU" && lastSegment == "DWL") {
+        // Add 'ms'
+        payload = payload + "ms";
       }
     }
   }
@@ -447,120 +315,6 @@ void transformTime(String& timeString) {
   }
 }
 
-// String array for ECU Data parameters
-const String ecuDataStrings[] = {"RPM", "TPS", "VE", "SPD", "LCT", "TM1", "TM2", "DST", "VE1", "ENR", "IET", "FAN", "TMP", "O2P", "MAT", "CAD", "DWL",
-                                     "MAP", "O2S", "ITC", "TAE", "COR", "AFT", "PW1", "TPD", "ADV", "LPS", "FRM", "BST", "BSD", "SPK", "RPD", "ETH", "FLC",
-                                     "FIC", "ILL", "TOF", "BAR", "TAD", "NER", "STA", "ENG", "BTC", "BAT", "EGC", "WEC", "SCL"};
-
-// Menu system callback functions
-MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet) {
-  static MD_Menu::value_t v;
-
-  switch (id) {
-
-    case 8:  // ECU Values
-      if (!bGet) {
-        mqtt.unsubscribe("/GOLF86/ECU/" + String(dataIndex));
-        mqtt.unsubscribe("/GOLF86/GPS/" + String(dataIndex));
-      }
-
-      if (bGet) {
-        // Convert dataIndex to index and set the value
-        for (int i = 0; i < sizeof(ecuDataStrings) / sizeof(ecuDataStrings[0]); ++i) {
-          if (String(dataIndex) == ecuDataStrings[i]) {
-            v.value = i;
-            break;
-          }
-        }
-      } else {
-        strncpy(dataIndex, ecuDataStrings[v.value].c_str(), sizeof(dataIndex));
-        dataIndex[sizeof(dataIndex) - 1] = '\0';  // Ensure null-termination
-
-        // subscribe to chosen MQTT topic
-        mqtt.subscribe("/GOLF86/ECU/" + String(dataIndex));
-        Serial.println("\nSubscribed to topic /GOLF86/ECU/" + String(dataIndex));
-        // set initial display value
-        strcpy(newMessage, "---");
-        newMessageAvailable = true;
-      }
-      break;
-    case 9:  // GPS Values
-      if (!bGet) {
-        mqtt.unsubscribe(String("/GOLF86/ECU/") + String(dataIndex));
-        mqtt.unsubscribe(String("/GOLF86/GPS/") + String(dataIndex));
-      }
-      if (bGet) {
-        if (dataIndex == "SPD") v.value = 0;
-        else if (dataIndex == "TME") v.value = 1;
-        else if (dataIndex == "DTE") v.value = 2;
-        else if (dataIndex == "LAT") v.value = 3;
-        else if (dataIndex == "LNG") v.value = 4;
-        else if (dataIndex == "ALT") v.value = 5;
-        else if (dataIndex == "CRS") v.value = 6;
-        else if (dataIndex == "QTY") v.value = 7;
-      } else {
-        if (v.value == 0) {
-          strcpy(dataIndex, "SPD");
-        } else if (v.value == 1) {
-          strcpy(dataIndex, "TME");
-        } else if (v.value == 2) {
-          strcpy(dataIndex, "DTE");
-        } else if (v.value == 3) {
-          strcpy(dataIndex, "LAT");
-        } else if (v.value == 4) {
-          strcpy(dataIndex, "LNG");
-        } else if (v.value == 5) {
-          strcpy(dataIndex, "ALT");
-        } else if (v.value == 6) {
-          strcpy(dataIndex, "CRS");
-        } else if (v.value == 7) {
-          strcpy(dataIndex, "QTY");
-        }
-        // subscribe to chosen MQTT topic
-        mqtt.subscribe(String("/GOLF86/ECU/") + dataIndex);
-
-        Serial.println("\nSubscribed to topic /GOLF86/GPS/" + String(dataIndex));
-        // set initial display value
-        strcpy(newMessage, "---");
-        newMessageAvailable = true;
-      }
-      break;
-    case 10:  // Align
-      if (bGet) {
-        switch (Config.align) {
-          case PA_LEFT: v.value = 0; break;
-          case PA_CENTER: v.value = 1; break;
-          case PA_RIGHT: v.value = 2; break;
-        }
-      } else {
-        switch (v.value) {
-          case 0: Config.align = PA_LEFT; break;
-          case 1: Config.align = PA_CENTER; break;
-          case 2: Config.align = PA_RIGHT; break;
-        }
-        P.setTextAlignment(Config.align);
-      }
-      break;
-
-    case 11:  // Bright
-      if (bGet)
-        v.value = Config.bright;
-      else {
-        Config.bright = v.value;
-        P.setIntensity(Config.bright);
-      }
-      break;
-  }
-
-  // if things were requested, return the buffer
-  if (bGet)
-    return &v;
-  else  // save the parameters
-    paramSave();
-
-  return nullptr;
-}
-
 // Display callback function
 bool display(MD_Menu::userDisplayAction_t action, char* msg) {
   switch (action) {
@@ -569,16 +323,16 @@ bool display(MD_Menu::userDisplayAction_t action, char* msg) {
       break;
 
     case MD_Menu::DISP_CLEAR:
-      P.displayClear();
+      mainDisplay.displayClear();
       break;
 
     case MD_Menu::DISP_L0:
       // Only one zone, no line 0
-      P.print(msg);
+      mainDisplay.print(msg);
       break;
 
     case MD_Menu::DISP_L1:
-      P.print(msg);
+      mainDisplay.print(msg);
       break;
   }
 
@@ -588,7 +342,7 @@ bool display(MD_Menu::userDisplayAction_t action, char* msg) {
 void setup() {
 
   Serial.begin(115200);
-  prefs.begin("G86-INFO", false);
+  prefs.begin(MQTT_CLIENT_NAME, false);
 
   setupWifi();
   paramLoad();
@@ -600,13 +354,10 @@ void setup() {
   M.setAutoStart(true);
   M.setTimeout(MENU_TIMEOUT);
 
-  //Display
-  P.begin();
-  P.setIntensity(Config.bright);
-  P.setCharSpacing(1);
-
-  // Seed for random number generation
-  srand(time(NULL));
+  //Main display
+  mainDisplay.begin();
+  mainDisplay.setIntensity(Config.bright);
+  mainDisplay.setCharSpacing(1);
 }
 
 void loop() {
@@ -617,14 +368,14 @@ void loop() {
 
   if (wasInMenu && !M.isInMenu())  // was running but not anymore
   {
-    // Reset the display to show the message
-    P.displayClear();
+    // Reset the main display to show the message
+    mainDisplay.displayClear();
 
     if (firstRun) {
-      P.setSpriteData(pacman, W_PMAN, F_PMAN, pacman, W_PMAN, F_PMAN);
-      P.displayText("Golf'86", Config.align, 100, 3000, PA_OPENING_CURSOR, PA_SPRITE);
+      mainDisplay.setSpriteData(pacman, W_PMAN, F_PMAN, pacman, W_PMAN, F_PMAN);
+      mainDisplay.displayText(WELCOME_MSG, Config.align, 100, 3000, PA_OPENING_CURSOR, PA_SPRITE);
     } else {
-      P.displayText(curMessage, Config.align, 1, 150, PA_PRINT, PA_PRINT);
+      mainDisplay.displayText(curMessage, Config.align, 1, 150, PA_PRINT, PA_PRINT);
     }
 
     wasInMenu = false;
@@ -635,15 +386,15 @@ void loop() {
 
   if (!M.isInMenu())  // not running the menu? do something else
   {
-    // animate the display and check for a new message if ended
-    if (P.displayAnimate()) {
+    // animate the main display and check for a new message if ended
+    if (mainDisplay.displayAnimate()) {
       firstRun = false;
 
       if (newMessageAvailable) {
         strcpy(curMessage, newMessage);
         newMessageAvailable = false;
       }
-      P.displayReset();
+      mainDisplay.displayReset();
     }
   }
 }

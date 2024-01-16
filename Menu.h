@@ -1,7 +1,7 @@
 // Menu.h
 
-#ifndef MY_MENU_H
-#define MY_MENU_H
+#ifndef MENU_H
+#define MENU_H
 
 #include <MD_Menu.h>      // Settings menu https://github.com/MajicDesigns/MD_Menu
 #include <MD_REncoder.h>  // Rotary encoder lib https://github.com/MajicDesigns/MD_REncoder

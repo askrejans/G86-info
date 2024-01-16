@@ -9,12 +9,13 @@
 //
 //
 
-#include <Preferences.h>    // Preferences library for ESP32
-#include <SPI.h>            //SPI interface for display control
-#include <WiFiManager.h>    //Wifi Web manager/config + custom parameters https://github.com/tzapu/WiFiManager
-#include <MQTT.h>           //MQTT lib https://github.com/256dpi/arduino-mqtt
-#include <WiFi.h>           //Wifi lib for MQTT
-#include "Menu.h"           //Device menu and navigation
+#include <Preferences.h>  // Preferences library for ESP32
+#include <SPI.h>          //SPI interface for display control
+#include <WiFiManager.h>  //Wifi Web manager/config + custom parameters https://github.com/tzapu/WiFiManager
+#include <MQTT.h>         //MQTT lib https://github.com/256dpi/arduino-mqtt
+#include <WiFi.h>         //Wifi lib for MQTT
+#include "Menu.h"         //Device menu and navigation
+#include "Timer.h"
 #include "PacmanSprites.h"  //Sprites for startup animation
 
 // Various constants
@@ -342,6 +343,7 @@ bool display(MD_Menu::userDisplayAction_t action, char* msg) {
 void setup() {
 
   Serial.begin(115200);
+
   prefs.begin(MQTT_CLIENT_NAME, false);
 
   setupWifi();
@@ -358,6 +360,25 @@ void setup() {
   mainDisplay.begin();
   mainDisplay.setIntensity(Config.bright);
   mainDisplay.setCharSpacing(1);
+
+  //7 Segment timer display
+
+  timerDisplay = LedController<1, 1>(DIN, CLK, CS);
+
+  /* Set the brightness to a medium values */
+  timerDisplay.setIntensity(8);
+  /* and clear the display */
+  timerDisplay.clearMatrix();
+
+  xTaskCreatePinnedToCore(
+    timerDisplayLoop,    // Function to implement the task
+    "timerDisplayLoop",  // Name of the task
+    4096,                // Stack size in bytes
+    NULL,                // Task input parameter
+    0,                   // Priority of the task
+    NULL,                // Task handle.
+    0                    // Core where the task should run
+  );
 }
 
 void loop() {
@@ -396,5 +417,11 @@ void loop() {
       }
       mainDisplay.displayReset();
     }
+  }
+}
+
+void timerDisplayLoop(void* pvParameters) {
+  while (1) {
+    scrollGolf86On7Segment();
   }
 }

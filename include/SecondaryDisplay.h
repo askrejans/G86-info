@@ -1,7 +1,7 @@
-// Menu.h
+// SECONDARY_DISPLAY_H
 
-#ifndef TIMER_H
-#define TIMER_H
+#ifndef SECONDARY_DISPLAY_H
+#define SECONDARY_DISPLAY_H
 
 #include <MD_UISwitch.h>      // Physical switch lib https://github.com/MajicDesigns/MD_UISwitch
 #include "LedController.hpp"  // 7 segment display driver https://github.com/noah1510/LedController
@@ -23,7 +23,7 @@ unsigned long delaytime = 250;
  from left to right on the 8-digit display.
 */
 void scrollGolf86On7Segment() {
-  const char golf86[] = "GOLF 86";
+  const char golf86[] = "GOLF'86";
   const int numDigits = 8;
 
   while (true) {
@@ -43,4 +43,4 @@ void scrollGolf86On7Segment() {
 }
 
 
-#endif  // TIMER_H
+#endif  // END_SECONDARY_DISPLAY_H

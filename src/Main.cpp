@@ -9,13 +9,15 @@
 //
 //
 
+#include <Arduino.h>
 #include <Preferences.h>  // Preferences library for ESP32
 #include <SPI.h>          //SPI interface for display control
 #include <WiFiManager.h>  //Wifi Web manager/config + custom parameters https://github.com/tzapu/WiFiManager
 #include <MQTT.h>         //MQTT lib https://github.com/256dpi/arduino-mqtt
 #include <WiFi.h>         //Wifi lib for MQTT
+
 #include "Menu.h"         //Device menu and navigation
-#include "Timer.h"
+#include "SecondaryDisplay.h" //Secondary display control
 #include "PacmanSprites.h"  //Sprites for startup animation
 
 // Various constants
@@ -56,6 +58,13 @@ bool shouldSaveConfig = false;
 unsigned long lastBlinkMillis = 0;  // Variable to store the last time the colon was blinked for time
 bool colonVisible = true;           // Flag to track the visibility of the colon for time
 char dataIndex[] = "RPM";
+
+void setupMqtt(String&, String&);
+void saveConfigCallback();
+void paramSave();
+void messageReceived(String&, String&);
+void transformTime(String&);
+void timerDisplayLoop(void* parameter);
 
 void setupWifi(void) {
   WiFiManagerParameter custom_mqtt_server("server", "MQTT server", Config.mqtt_server, 40);
@@ -370,15 +379,15 @@ void setup() {
   /* and clear the display */
   timerDisplay.clearMatrix();
 
-  xTaskCreatePinnedToCore(
-    timerDisplayLoop,    // Function to implement the task
-    "timerDisplayLoop",  // Name of the task
-    4096,                // Stack size in bytes
-    NULL,                // Task input parameter
-    0,                   // Priority of the task
-    NULL,                // Task handle.
-    0                    // Core where the task should run
-  );
+xTaskCreatePinnedToCore(
+  timerDisplayLoop,    // Function to implement the task
+  "timerDisplayLoop",  // Name of the task
+  4096,                // Stack size in bytes
+  NULL,                // Task input parameter
+  0,                   // Priority of the task
+  NULL,                // Task handle.
+  0                    // Core where the task should run
+);
 }
 
 void loop() {
@@ -420,8 +429,10 @@ void loop() {
   }
 }
 
-void timerDisplayLoop(void* pvParameters) {
+void timerDisplayLoop(void* parameter) {
   while (1) {
     scrollGolf86On7Segment();
+    vTaskDelay(1000 / portTICK_PERIOD_MS);  // Add a delay to avoid busy-waiting
   }
 }
+

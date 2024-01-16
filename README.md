@@ -1,4 +1,4 @@
-# Golf86-Info - Arduino ESP32 LED Matrix Display Controller
+# Golf86-Info - PlatformIO/Arduino ESP32 LED Matrix Display Controller
 
 This PlatformIO built C++/Arduino ESP32 program controls a retro-style LED-matrix display, presenting various values received from an MQTT server. The primary focus is on showcasing Speeduino ECU parameters, GPS data, lap times, etc. The display is managed using the Parola library.
 Created as a personal project to drive an ESP32 based system in the glovebox of my project car (Golf mk2, hence the name). Currently only 2 core ESP32 is supported, as FreeRTOS task switching is used for display/mqtt control.

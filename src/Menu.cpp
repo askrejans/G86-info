@@ -21,15 +21,17 @@ MD_UISwitch_Digital swCtl(CTL_PIN);
 
 // Header data for the menu
 const PROGMEM MD_Menu::mnuHeader_t mnuHdr[] = {
-  { 1, "Menu>>>", 1, 5, 0 },
+  { 1, "Menu>>>", 1, 7, 0 },
 };
 
 // Menu item data for ECU, GPS, POS, and BRT options
 const PROGMEM MD_Menu::mnuItem_t mnuItm[] = {
-  { 2, "ECU", MD_Menu::MNU_INPUT, 2 },
-  { 3, "GPS", MD_Menu::MNU_INPUT, 3 },
-  { 4, "POS", MD_Menu::MNU_INPUT, 4 },
-  { 5, "BRT", MD_Menu::MNU_INPUT, 5 },
+  { 2, "P:ECU", MD_Menu::MNU_INPUT, 2 },
+  { 3, "P:GPS", MD_Menu::MNU_INPUT, 3 },
+  { 4, "S:ECU", MD_Menu::MNU_INPUT, 4 },
+  { 5, "S:GPS", MD_Menu::MNU_INPUT, 5 },
+  { 6, "POS", MD_Menu::MNU_INPUT, 6 },
+  { 7, "BRT", MD_Menu::MNU_INPUT, 7 },
 };
 
 // Mapping of 3-letter values to their corresponding parameters in the Speeduino ECU data
@@ -70,8 +72,10 @@ const PROGMEM char listAlign[] = "L|C|R";
 const PROGMEM MD_Menu::mnuInput_t mnuInp[] = {
   { 2, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listECU },
   { 3, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listGPS },
-  { 4, "P", MD_Menu::INP_LIST, mnuValueRqst, 1, 0, 0, 0, 0, 0, listAlign },
-  { 5, "B", MD_Menu::INP_INT, mnuValueRqst, 2, 0, 0, 15, 0, 10, nullptr },
+  { 4, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listECU },
+  { 5, "", MD_Menu::INP_LIST, mnuValueRqst, 3, 0, 0, 0, 0, 0, listGPS },
+  { 6, "P", MD_Menu::INP_LIST, mnuValueRqst, 1, 0, 0, 0, 0, 0, listAlign },
+  { 7, "B", MD_Menu::INP_INT, mnuValueRqst, 2, 0, 0, 15, 0, 10, nullptr },
 };
 
 // Menu global object

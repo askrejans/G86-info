@@ -9,11 +9,6 @@
 //
 
 #include <Arduino.h>
-#include <Preferences.h>
-#include <SPI.h>
-#include <WiFiManager.h>
-#include <MQTT.h>
-#include <WiFi.h>
 #include "Menu.h"
 #include "SecondaryLoop.h"
 #include "PacmanSprites.h"
@@ -30,6 +25,16 @@ const char *MQTT_TOPIC_BASE = "GOLF86";
 const char *WELCOME_MSG = "Golf'86";
 const char *WELCOME_MSG2 = "GOLF'86";
 
+// Global message buffers shared by Serial and Scrolling functions
+char notAvailableMsg[] = "..N/A..";
+bool firstRun = true;
+bool newMessageAvailable = true;
+char curMessage[128];
+char newMessage[128];
+volatile char secondaryScreenMode[] = "WELCOME";
+volatile bool newMessageAvailable2 = true;
+volatile char newMessage2[128];
+
 // Initialize WiFi and MQTT setup instances
 WiFiSetup wifiSetup;
 MqttSetup mqttSetup;
@@ -41,16 +46,6 @@ MqttSetup mqttSetup;
 
 // Initialize Parola library for DOT matrix display
 MD_Parola mainDisplay = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
-
-// Global message buffers shared by Serial and Scrolling functions
-char notAvailableMsg[] = "..N/A..";
-bool firstRun = true;
-bool newMessageAvailable = true;
-char curMessage[128];
-char newMessage[128];
-volatile char secondaryScreenMode[] = "WELCOME";
-volatile bool newMessageAvailable2 = true;
-volatile char newMessage2[128];
 
 // Setup function to initialize peripherals and tasks
 void setup()

@@ -9,6 +9,9 @@
 #include <MD_Parola.h>    // Display library https://github.com/MajicDesigns/MD_Parola
 #include <MD_MAX72xx.h>   // Display driver https://github.com/MajicDesigns/MD_MAX72XX
 
+#include "WiFiSetup.h"
+#include "MqttSetup.h"
+
 /**
  * @file Menu.h
  * @brief Header file for the menu system with rotary encoder, switch, and display functionality.
@@ -50,5 +53,9 @@ bool display(MD_Menu::userDisplayAction_t action, char* msg);
 MD_Menu::value_t* mnuValueRqst(MD_Menu::mnuId_t id, bool bGet);
 
 void setupNav(void);
+extern MD_Parola mainDisplay;
+extern WiFiSetup wifiSetup;
+extern MqttSetup mqttSetup;
+extern volatile char secondaryScreenMode[];
 
 #endif  // MENU_H

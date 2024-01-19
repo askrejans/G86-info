@@ -28,6 +28,20 @@ Created as a personal project to drive an ESP32 based system in the glovebox of 
 - [MQTT](https://github.com/256dpi/arduino-mqtt)
 - [WiFi](https://www.arduino.cc/en/reference/WiFi)
 
+Dependency Graph
+|-- googletest @ 1.12.1
+|-- MQTT @ 2.5.1
+|-- Preferences @ 2.0.0
+|-- SPI @ 2.0.0
+|-- WiFi @ 2.0.0
+|-- WiFiManager @ 2.0.16-rc.2
+|-- MD_MAX72XX @ 3.5.1
+|-- MD_Menu @ 2.1.3
+|-- MD_Parola @ 3.7.1
+|-- MD_REncoder @ 1.0.2
+|-- MD_UISwitch @ 2.2.2
+|-- LedController @ 2.0.2
+
 ## Configuration
 - **Menu Timeout:** 3000 milliseconds
 - **MQTT Server Default:** localhost

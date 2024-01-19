@@ -3,22 +3,20 @@
 LedController<1, 1> secondaryDisplay; // Secondary 7-segment LED display
 unsigned long delaytime = 250;        // Delay time for scrolling animation
 
-/*
- This method will continuously scroll the characters "GOLF 86"
- from left to right on the 8-digit display.
-*/
+/**
+ * @brief Scrolls the characters "GOLF 86" from left to right on the 8-digit display.
+ */
 void scrollGolf86On7Segment()
 {
-  const char golf86[] = "GOLF'86"; // Text to be scrolled
-  const int numDigits = 8;          // Number of digits on the display
+  const int numDigits = 8; // Number of digits on the display
 
-  for (int i = 0; i < strlen(golf86) + numDigits; i++)
+  for (int i = 0; i < strlen(WELCOME_MSG2) + numDigits; i++)
   {
     // Display the "GOLF 86" text in a loop
     for (int j = 0; j < numDigits; j++)
     {
       // Calculate the character to be displayed
-      char displayChar = (i - j >= 0 && i - j < strlen(golf86)) ? golf86[i - j] : ' '; // Display space before "GOLF 86"
+      char displayChar = (i - j >= 0 && i - j < strlen(WELCOME_MSG2)) ? WELCOME_MSG2[i - j] : ' '; // Display space before "GOLF 86"
       secondaryDisplay.setChar(0, j, displayChar, false);
     }
 
@@ -29,10 +27,10 @@ void scrollGolf86On7Segment()
   // Pause for a moment before starting the loop again
   vTaskDelay(1000);
 }
-
-/*
- Display the given text on the 7-segment LED display.
-*/
+/**
+ * @brief Displays the given text on the 7-segment LED display.
+ * @param text The text to be displayed.
+ */
 void showText(const char *text)
 {
   const int numDigits = 8; // Number of digits on the display
@@ -46,7 +44,10 @@ void showText(const char *text)
   }
 }
 
-// Secondary loop - Task to update the secondary display with MQTT received message
+/**
+ * @brief Task to update the secondary display with an MQTT received message.
+ * @param parameter Unused parameter required by the FreeRTOS task signature.
+ */
 void secondaryDisplayLoop(void *parameter)
 {
   volatile const char *tmpSecondaryScreenMode;

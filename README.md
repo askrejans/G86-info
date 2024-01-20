@@ -28,7 +28,6 @@ Created as a personal project to drive an ESP32 based system in the glovebox of 
 - [WiFiManager](https://github.com/tzapu/WiFiManager)
 - [MQTT](https://github.com/256dpi/arduino-mqtt)
 - [WiFi](https://www.arduino.cc/en/reference/WiFi)
-- [LedController](https://github.com/askrejans/LedController)
 
 Dependency Graph
 |-- googletest @ 1.12.1

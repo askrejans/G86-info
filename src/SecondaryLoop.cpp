@@ -166,10 +166,12 @@ void timer2Chronometer(void *parameter)
  */
 void convertTimerToTime(unsigned long timerValue, int &hours, int &minutes, int &seconds, int &hundredths)
 {
+  unsigned long totalSeconds = timerValue / 1000;
+
   hundredths = (timerValue / 10) % 100;
-  seconds = (timerValue / 1000) % 60;
-  minutes = (timerValue / (1000 * 60)) % 60;
-  hours = (timerValue / (1000 * 60 * 60)) % 24;
+  seconds = totalSeconds % 60;
+  minutes = (totalSeconds / 60) % 60;
+  hours = (totalSeconds / 3600) % 24;
 }
 
 /**
@@ -193,6 +195,9 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
     snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d", minutes, seconds, hundredths);
   }
 
+  // Ensure null-termination
+  timeText[sizeof(timeText) - 1] = '\0';
+
   // Display each character of the time on the LED display
   for (int j = 0; j < numDigits; j++)
   {
@@ -200,3 +205,4 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
     secondaryDisplay.setChar(0, j, displayChar, false);
   }
 }
+

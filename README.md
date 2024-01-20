@@ -15,6 +15,7 @@ Created as a personal project to drive an ESP32 based system in the glovebox of 
 - **MQTT Integration:** Utilizes MQTT library ([GitHub Link](https://github.com/256dpi/arduino-mqtt)) for collecting data from an MQTT server. Note: MQTT is currently supported without a password.
 - **OTA Updates:** Includes Over-The-Air (OTA) update functionality for easy firmware updates.
 - **User Interface:** Menu controls are managed through a rotary encoder and an external switch.
+- **Racing Timers:** Has two racing timers on secondary display - with control scheme for pause, reset and independent functionality in background using FreeRTOS tasks.
 
 ## Dependencies
 - [Preferences.h](https://github.com/espressif/arduino-esp32/tree/master/libraries/Preferences)
@@ -27,6 +28,7 @@ Created as a personal project to drive an ESP32 based system in the glovebox of 
 - [WiFiManager](https://github.com/tzapu/WiFiManager)
 - [MQTT](https://github.com/256dpi/arduino-mqtt)
 - [WiFi](https://www.arduino.cc/en/reference/WiFi)
+- [LedController](https://github.com/askrejans/LedController)
 
 Dependency Graph
 |-- googletest @ 1.12.1

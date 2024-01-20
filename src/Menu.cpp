@@ -127,7 +127,6 @@ void setupNav(void)
   swCtl.enableDoublePress(false);
 }
 
-
 // String array for ECU and GPS Data parameters
 const String ecuDataStrings[] = {"RPM", "TPS", "VE1", "O2P", "AFT", "MAT", "CAD", "MAP", "BAT", "ADV", "PW1", "SPK", "DWL", "ILL", "BAR", "TAE", "NER", "ENG"};
 const String gpsDataStrings[] = {"SPD", "TME", "DTE", "LAT", "LNG", "ALT", "CRS", "QTY"};

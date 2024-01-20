@@ -3,6 +3,14 @@
 LedController<1, 1> secondaryDisplay; // Secondary 7-segment LED display
 unsigned long delaytime = 250;        // Delay time for scrolling animation
 
+// Define variables to store timer values
+volatile unsigned long timer1Value = 0;
+volatile unsigned long timer2Value = 0;
+bool timer1Started = false; // Flag to indicate if Timer 1 is started
+bool timer2Started = false; // Flag to indicate if Timer 2 is started
+TimerHandle_t timer1Handle;
+TimerHandle_t timer2Handle;
+
 /**
  * @brief Scrolls the characters "GOLF 86" from left to right on the 8-digit display.
  */
@@ -27,6 +35,7 @@ void scrollGolf86On7Segment()
   // Pause for a moment before starting the loop again
   vTaskDelay(1000);
 }
+
 /**
  * @brief Displays the given text on the 7-segment LED display.
  * @param text The text to be displayed.
@@ -54,23 +63,140 @@ void secondaryDisplayLoop(void *parameter)
 
   while (1)
   {
-    // Check the current secondary screen mode
     if (strcmp(const_cast<char *>(secondaryScreenMode), "WELCOME") == 0)
     {
-      // Display the welcome message before showing MQTT messages
       scrollGolf86On7Segment();
     }
     else if (strcmp(const_cast<char *>(secondaryScreenMode), "MQTT") == 0)
     {
-      // Show the MQTT message on the display if available
       if (newMessageAvailable2)
       {
         showText(const_cast<char *>(newMessage2));
         newMessageAvailable2 = false;
       }
     }
+    else if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER1") == 0)
+    {
+      int hours, minutes, seconds, hundredths;
+      convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
+      displayTime(hours, minutes, seconds, hundredths);
+    }
+    else if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER2") == 0)
+    {
+      int hours, minutes, seconds, hundredths;
+      convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
+      displayTime(hours, minutes, seconds, hundredths);
+    }
 
-    // Add a delay to avoid a busy loop
     vTaskDelay(10);
+  }
+}
+
+/**
+ * @brief Callback function for timer 1.
+ * @param xTimer The timer handle.
+ */
+void timer1Callback(TimerHandle_t xTimer)
+{
+  timer1Value += 10;
+  if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER1") == 0)
+  {
+    int hours, minutes, seconds, hundredths;
+    convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
+    displayTime(hours, minutes, seconds, hundredths);
+  }
+}
+
+/**
+ * @brief Callback function for timer 2.
+ * @param xTimer The timer handle.
+ */
+void timer2Callback(TimerHandle_t xTimer)
+{
+  timer2Value += 10;
+  if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER2") == 0)
+  {
+    int hours, minutes, seconds, hundredths;
+    convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
+    displayTime(hours, minutes, seconds, hundredths);
+  }
+}
+
+/**
+ * @brief FreeRTOS task to handle timer 1 chronometer functionality.
+ * @param parameter Unused parameter required by the FreeRTOS task signature.
+ */
+void timer1Chronometer(void *parameter)
+{
+  while (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER1") != 0)
+  {
+    vTaskDelay(10);
+  }
+
+  timer1Handle = xTimerCreate("Timer1", pdMS_TO_TICKS(10), pdTRUE, nullptr, timer1Callback);
+  xTimerStart(timer1Handle, 0);
+
+  vTaskDelete(nullptr);
+}
+
+/**
+ * @brief FreeRTOS task to handle timer 2 chronometer functionality.
+ * @param parameter Unused parameter required by the FreeRTOS task signature.
+ */
+void timer2Chronometer(void *parameter)
+{
+  while (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER2") != 0)
+  {
+    vTaskDelay(10);
+  }
+
+  timer2Handle = xTimerCreate("Timer2", pdMS_TO_TICKS(10), pdTRUE, nullptr, timer2Callback);
+  xTimerStart(timer2Handle, 0);
+
+  vTaskDelete(nullptr);
+}
+
+/**
+ * @brief Convert timer value to hours, minutes, seconds, and hundredths of seconds.
+ * @param timerValue The timer value in milliseconds.
+ * @param hours Reference to store the calculated hours.
+ * @param minutes Reference to store the calculated minutes.
+ * @param seconds Reference to store the calculated seconds.
+ * @param hundredths Reference to store the calculated hundredths of seconds.
+ */
+void convertTimerToTime(unsigned long timerValue, int &hours, int &minutes, int &seconds, int &hundredths)
+{
+  hundredths = (timerValue / 10) % 100;
+  seconds = (timerValue / 1000) % 60;
+  minutes = (timerValue / (1000 * 60)) % 60;
+  hours = (timerValue / (1000 * 60 * 60)) % 24;
+}
+
+/**
+ * @brief Display time on the 7-segment LED display.
+ * @param hours Hours to display.
+ * @param minutes Minutes to display.
+ * @param seconds Seconds to display.
+ * @param hundredths Hundredths of seconds to display.
+ */
+void displayTime(int hours, int minutes, int seconds, int hundredths)
+{
+  const int numDigits = 8;
+  char timeText[9];
+
+  if (hours > 0)
+  {
+    snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d", hours, minutes, seconds);
+  }
+  else
+  {
+    snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d", minutes, seconds, hundredths);
+  }
+
+  // Display each character of the time on the LED display
+  for (int j = 0; j < numDigits; j++)
+  {
+    char displayChar = (j < strlen(timeText)) ? timeText[strlen(timeText) - j - 1] : ' ';
+    secondaryDisplay.setChar(0, j, displayChar, false);
   }
 }

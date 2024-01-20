@@ -14,6 +14,7 @@
 #include "PacmanSprites.h"
 #include "WiFiSetup.h"
 #include "MqttSetup.h"
+#include "TimerButtons.h"
 
 // Constants for configuration
 const uint16_t MENU_TIMEOUT = 3000;
@@ -60,6 +61,7 @@ void setup()
   wifiSetup.begin();
   mqttSetup.begin();
   setupNav();
+  setupTimerSwitches();
 
   // Initialize Menu
   M.begin();
@@ -78,25 +80,21 @@ void setup()
 
   // Create a secondary display task on a separate core
   xTaskCreatePinnedToCore(
-      secondaryDisplayLoop,   // Function to implement the task
-      "secondaryDisplayLoop", // Name of the task
-      4096,                   // Stack size in bytes
-      NULL,                   // Task input parameter
-      1,                      // Priority of the task
-      NULL,                   // Task handle.
-      0                       // Core where the task should run (different from the main loop)
+      secondaryDisplayLoop,
+      "secondaryDisplayLoop",
+      4096, // Stack size in bytes
+      NULL, // Task input parameter
+      1,    // Priority of the task
+      NULL, // Task handle.
+      0     // Core where the task should run (different from the main loop)
   );
 }
 
-// Main loop function
-void loop()
+/**
+ * @brief Updates the main display based on the current state.
+ */
+void updateMainDisplay(bool &wasInMenu, bool &firstRun, char *curMessage)
 {
-  // Connect to MQTT server
-  mqttSetup.connect();
-
-  static bool wasInMenu = true;
-
-  // Clear main display when exiting menu
   if (wasInMenu && !M.isInMenu())
   {
     mainDisplay.displayClear();
@@ -119,7 +117,6 @@ void loop()
   wasInMenu = M.isInMenu();
   M.runMenu();
 
-  // Display animation or current message when not in menu
   if (!M.isInMenu())
   {
     if (mainDisplay.displayAnimate())
@@ -135,4 +132,19 @@ void loop()
       mainDisplay.displayReset();
     }
   }
+}
+
+/**
+ * @brief Main loop function.
+ */
+void loop()
+{
+  // Connect to MQTT server
+  mqttSetup.connect();
+
+  static bool wasInMenu = true;
+
+  // Update the main display based on the current state
+  updateMainDisplay(wasInMenu, firstRun, curMessage);
+  monitorTimerSwitches();
 }

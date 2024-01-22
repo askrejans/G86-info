@@ -2,6 +2,7 @@
 #define TIMER_BUTTON_H
 
 #include <MD_UISwitch.h> // Physical switch lib https://github.com/MajicDesigns/MD_UISwitch
+#include "MqttSetup.h"
 
 // External declarations for global variables used in TimerButtons.cpp
 extern int activeTimer;
@@ -11,6 +12,9 @@ extern TimerHandle_t timer1Handle;
 extern TimerHandle_t timer2Handle;
 extern volatile unsigned long timer1Value;
 extern volatile unsigned long timer2Value;
+extern const String MQTT_TIMER1_TOPIC;
+extern const String MQTT_TIMER2_TOPIC;
+extern MqttSetup mqttSetup;
 
 // Pin assignments for timer buttons
 const uint8_t SW1_TME_PIN = 14; // Port for the first timer button

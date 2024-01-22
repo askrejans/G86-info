@@ -2,19 +2,15 @@
 #include "Menu.h"
 
 // Rotary switch and button initialization
-const uint8_t RE_A_PIN = 25; ///< Port for rotary switch A channel
-const uint8_t RE_B_PIN = 26; ///< Port for rotary switch B channel
+const uint8_t RE_A_PIN = 26; ///< Port for rotary switch A channel
+const uint8_t RE_B_PIN = 25; ///< Port for rotary switch B channel
 const uint8_t CTL_PIN = 27;  ///< Port for the main input button
 
 // Initialize rotary encoder
 MD_REncoder RE(RE_A_PIN, RE_B_PIN);
-
+ 
 // Initialize switch library for the main input button
 MD_UISwitch_Digital swCtl(CTL_PIN);
-
-// Extract this constant as it's being used in multiple places
-const String MQTT_ECU_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/ECU/";
-const String MQTT_GPS_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/GPS/";
 
 // Transform helper variables
 char dataIndex[] = "RPM";

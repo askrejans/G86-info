@@ -63,18 +63,24 @@ void monitorTimerSwitches()
         // Check active timer and timer state, then perform appropriate action
         if (activeTimer == 1 && !timer1Started)
         {
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("started"), "true");
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("paused"), "false");
             startTimer1();
         }
         else if (activeTimer == 1)
         {
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("paused"), "true");
             pauseTimer(1);
         }
         else if (activeTimer == 2 && !timer2Started)
         {
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("started"), "true");
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("paused"), "false");
             startTimer2();
         }
         else if (activeTimer == 2)
         {
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("paused"), "true");
             pauseTimer(2);
         }
     }
@@ -87,10 +93,16 @@ void monitorTimerSwitches()
         if (activeTimer == 1)
         {
             resetTimer(1);
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("started"), "false");
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("paused"), "false");
+            mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("value"), "00-00-00:00");
         }
         else if (activeTimer == 2)
         {
             resetTimer(2);
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("started"), "false");
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("paused"), "false");
+            mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("value"), "00-00-00:00");
         }
     }
 
@@ -220,6 +232,10 @@ void pauseTimer(int timerNr)
             // Stop timer and update status
             xTimerStop(timer1Handle, 0);
             timer1Started = false;
+            // send exact stop value to MQTT
+            int hours, minutes, seconds, hundredths;
+            convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
+            setTimeToMqtt(1, hours, minutes, seconds, hundredths);
         }
         break;
     case 2:
@@ -228,6 +244,10 @@ void pauseTimer(int timerNr)
             // Stop timer and update status
             xTimerStop(timer2Handle, 0);
             timer2Started = false;
+            // send exact stop value to MQTT
+            int hours, minutes, seconds, hundredths;
+            convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
+            setTimeToMqtt(2, hours, minutes, seconds, hundredths);
         }
         break;
     }

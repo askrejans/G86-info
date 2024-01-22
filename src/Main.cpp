@@ -26,6 +26,12 @@ const char *MQTT_TOPIC_BASE = "GOLF86";
 const char *WELCOME_MSG = "Golf'86";
 const char *WELCOME_MSG2 = "GOLF'86";
 
+// Extract this constant as it's being used in multiple places
+const String MQTT_ECU_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/ECU/";
+const String MQTT_GPS_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/GPS/";
+const String MQTT_TIMER1_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/TM1/";
+const String MQTT_TIMER2_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/TM2/";
+
 // Global message buffers shared by Serial and Scrolling functions
 char notAvailableMsg[] = "..N/A..";
 bool firstRun = true;

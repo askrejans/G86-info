@@ -5,6 +5,7 @@
 
 #include <MD_UISwitch.h>
 #include "LedController.hpp"
+#include "MqttSetup.h"
 
 #define DIN 5
 #define CS 4
@@ -56,6 +57,10 @@ extern bool timer2Started;
 extern volatile unsigned long timer1Value;
 extern volatile unsigned long timer2Value;
 
+extern const String MQTT_TIMER1_TOPIC;
+extern const String MQTT_TIMER2_TOPIC;
+extern MqttSetup mqttSetup;
+
 /**
  * @brief Callback function for timer 1.
  * @param xTimer The timer handle.
@@ -86,5 +91,15 @@ void convertTimerToTime(unsigned long timerValue, int &hours, int &minutes, int 
  * @param hundredths Hundredths of seconds to display.
  */
 void displayTime(int hours, int minutes, int seconds, int hundredths);
+
+/**
+ * @brief Pushes time to MQTT
+ * @param timer Timer nr.
+ * @param hours Hours to display.
+ * @param minutes Minutes to display.
+ * @param seconds Seconds to display.
+ * @param hundredths Hundredths of seconds to display.
+ */
+void setTimeToMqtt(int timer, int hours, int minutes, int seconds, int hundredths);
 
 #endif // SECONDARY_LOOP_H

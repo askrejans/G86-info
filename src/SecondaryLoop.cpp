@@ -99,11 +99,25 @@ void secondaryDisplayLoop(void *parameter)
 void timer1Callback(TimerHandle_t xTimer)
 {
   timer1Value += 10;
+  int hours, minutes, seconds, hundredths;
+  convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
+
   if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER1") == 0)
   {
-    int hours, minutes, seconds, hundredths;
-    convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
     displayTime(hours, minutes, seconds, hundredths);
+  }
+
+  static int counter = 0;
+
+  // Check if 100ms has elapsed
+  if (counter == 10)
+  {
+    setTimeToMqtt(1, hours, minutes, seconds, hundredths);
+    counter = 0; // Reset the counter
+  }
+  else
+  {
+    counter++;
   }
 }
 
@@ -114,11 +128,26 @@ void timer1Callback(TimerHandle_t xTimer)
 void timer2Callback(TimerHandle_t xTimer)
 {
   timer2Value += 10;
+
+  int hours, minutes, seconds, hundredths;
+  convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
+
   if (strcmp(const_cast<char *>(secondaryScreenMode), "TIMER2") == 0)
   {
-    int hours, minutes, seconds, hundredths;
-    convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
     displayTime(hours, minutes, seconds, hundredths);
+  }
+
+  static int counter = 0;
+
+  // Check if 100ms has elapsed
+  if (counter == 10)
+  {
+    setTimeToMqtt(2, hours, minutes, seconds, hundredths);
+    counter = 0; // Reset the counter
+  }
+  else
+  {
+    counter++;
   }
 }
 
@@ -206,3 +235,26 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
   }
 }
 
+/**
+ * @brief Pushes time to MQTT
+ * @param timer Timer nr.
+ * @param hours Hours to display.
+ * @param minutes Minutes to display.
+ * @param seconds Seconds to display.
+ * @param hundredths Hundredths of seconds to display.
+ */
+void setTimeToMqtt(int timer, int hours, int minutes, int seconds, int hundredths)
+{
+  char timeText[12];
+
+  snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d:%02d", hours, minutes, seconds, hundredths);
+
+  if (timer == 1)
+  {
+    mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("value"), timeText);
+  }
+  else if (timer == 2)
+  {
+    mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("value"), timeText);
+  }
+}

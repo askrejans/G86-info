@@ -58,6 +58,8 @@ public:
     Config config;     // Instance of the configuration structure
     Preferences prefs; // Instance of the Preferences library for persistent storage
 
+    void setDefaultIfEmpty(char* field, const char* defaultValue, size_t fieldSize);
+
 private:
     bool shouldSaveConfig = false; // Flag for saving data
 };

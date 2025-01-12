@@ -63,29 +63,34 @@ void WiFiSetup::begin()
 // Connect to WiFi
 bool WiFiSetup::connect()
 {
-    if (WiFi.status() != WL_CONNECTED)
+    if (WiFi.status() == WL_CONNECTED)
     {
-        Serial.println("Connecting to WiFi...");
-        WiFi.begin(AP_NAME, WIFI_PASSWORD);
-        int attemptCount = 0;
-        while (WiFi.status() != WL_CONNECTED && attemptCount < 30)
-        {
-            delay(1000);
-            Serial.print(".");
-            attemptCount++;
-        }
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            Serial.println("\nConnected to WiFi");
-            return true;
-        }
-        else
-        {
-            Serial.println("\nFailed to connect to WiFi");
-            return false;
-        }
+        Serial.println("Already connected to WiFi.");
+        return true;
     }
-    return true; // Already connected
+
+    Serial.println("Connecting to WiFi...");
+    WiFi.begin(AP_NAME, WIFI_PASSWORD);
+
+    const unsigned long startAttemptTime = millis();
+    const unsigned long timeout = 30000; // 30 seconds timeout
+
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < timeout)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        Serial.println("\nConnected to WiFi");
+        return true;
+    }
+    else
+    {
+        Serial.println("\nFailed to connect to WiFi");
+        return false;
+    }
 }
 
 // Callback function for saving custom configuration
@@ -107,13 +112,15 @@ void WiFiSetup::paramLoad()
     // Reading the stored configuration from preferences
     prefs.getBytes("config", &config, sizeof(config));
 
-    // Optional: Add validation or set default values for individual fields
-    if (strlen(config.mqtt_port) == 0)
+    // Validate or set default values for configuration fields
+    setDefaultIfEmpty(config.mqtt_port, "1883", sizeof(config.mqtt_port));
+    setDefaultIfEmpty(config.mqtt_server, "localhost", sizeof(config.mqtt_server));
+}
+
+void WiFiSetup::setDefaultIfEmpty(char* field, const char* defaultValue, size_t fieldSize)
+{
+    if (strlen(field) == 0)
     {
-        strncpy(config.mqtt_port, "1883", sizeof(config.mqtt_port));
-    }
-    if (strlen(config.mqtt_server) == 0)
-    {
-        strncpy(config.mqtt_server, "localhost", sizeof(config.mqtt_server));
+        strncpy(field, defaultValue, fieldSize);
     }
 }

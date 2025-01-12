@@ -319,8 +319,27 @@ void test_paramLoad(void)
     TEST_ASSERT_EQUAL_STRING(MockConfig.mqtt_port, "1234");
 }
 
-uint8_t i = 0;
-uint8_t max_blinks = 5;
+void test_transformTime_invalidFormat(void)
+{
+    String timeString = "123456";
+    TimeTransformer::transformTime(timeString);
+    TEST_ASSERT_EQUAL_STRING("123456", timeString.c_str());
+}
+
+void test_messageReceived_noPayloadTransformation(void)
+{
+    String topic = "some/topic/OTHER/SEG";
+    String payload = "no transformation";
+
+    // Reset newMessageAvailable and newMessage
+    newMessageAvailable = false;
+    newMessage[0] = '\0';
+
+    TimeTransformer::messageReceived(topic, payload);
+
+    TEST_ASSERT_EQUAL_STRING("no transformation", newMessage);
+    TEST_ASSERT_EQUAL(true, newMessageAvailable);
+}
 
 void setup()
 {
@@ -335,6 +354,7 @@ void setup()
     RUN_TEST(test_led_builtin_pin_number);
     // test time transform from GPS time
     RUN_TEST(test_transformTime_validFormat);
+    RUN_TEST(test_transformTime_invalidFormat);
 
     // tests for messageReceived
     RUN_TEST(test_messageReceived_GPS_TME);
@@ -350,6 +370,9 @@ void setup()
     RUN_TEST(test_paramSave);
     RUN_TEST(test_paramLoad);
 }
+
+int max_blinks = 10; // Initialize max_blinks with a value
+int i = 0; // Initialize i
 
 void loop()
 {

@@ -91,6 +91,39 @@ private:
      */
     static unsigned long lastBlinkMillis;
     static bool colonVisible;
+
+    /**
+     * @brief Handles GPS payload transformations.
+     * @param lastSegment The last segment of the topic.
+     * @param payload The message payload.
+     */
+    static void handleGpsPayload(const String &lastSegment, String &payload);
+
+    /**
+     * @brief Handles ECU payload transformations.
+     * @param lastSegment The last segment of the topic.
+     * @param payload The message payload.
+     */
+    static void handleEcuPayload(const String &lastSegment, String &payload);
+
+    /**
+     * @brief Checks if the time string is in a valid format.
+     * @param timeString The time string to check.
+     * @return True if the time string is valid, false otherwise.
+     */
+    static bool isValidTimeFormat(const String &timeString);
+
+    /**
+     * @brief Formats the time string to "HH:MM".
+     * @param timeString The time string to format.
+     * @return The formatted time string.
+     */
+    static String formatTimeString(const String &timeString);
+
+    /**
+     * @brief Toggles the visibility of the colon in the time string.
+     */
+    static void toggleColonVisibility();
 };
 
 #endif // MQTT_SETUP_H

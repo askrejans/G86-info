@@ -67,47 +67,13 @@ void MqttSetup::MqttMessageReceivedPrimary(String &topic, String &payload)
             String secondLastSegment = topic.substring(secondLastSlashIndex + 1, lastSlashIndex);
 
             // Switch between the last two segments
-            if (secondLastSegment == "GPS" && lastSegment == "TME")
+            if (secondLastSegment == "GPS")
             {
-                MqttSetup::transformTime(payload);
+                handleGpsPayload(lastSegment, payload);
             }
-            else if (secondLastSegment == "GPS" && lastSegment == "DTE")
+            else if (secondLastSegment == "ECU")
             {
-                // Remove dots between values, add slash, remove year. Incoming format dd.mm.yyyy
-                payload.replace(".", "");
-                String day = payload.substring(0, 2);
-                String month = payload.substring(2, 4);
-                payload = day + "/" + month;
-            }
-            else if (secondLastSegment == "GPS" && lastSegment == "SPD")
-            {
-                // Round the speed to the closest 1kmh + add kmh string
-                float speed = payload.toFloat();
-                payload = String(int(speed)) + "kmh";
-            }
-            else if (secondLastSegment == "GPS" && lastSegment == "ALT")
-            {
-                payload = payload + "m";
-            }
-            else if (secondLastSegment == "ECU" && (lastSegment == "TPS" || lastSegment == "VE1" || lastSegment == "TAE"))
-            {
-                // Add '%' sign to the end of the numeric value
-                payload = payload + "%";
-            }
-            else if (secondLastSegment == "ECU" && (lastSegment == "MAT" || lastSegment == "CAD"))
-            {
-                // Add 'C'
-                payload = payload + "C";
-            }
-            else if (secondLastSegment == "ECU" && lastSegment == "BAT")
-            {
-                // Add 'V'
-                payload = payload + "V";
-            }
-            else if (secondLastSegment == "ECU" && lastSegment == "DWL")
-            {
-                // Add 'ms'
-                payload = payload + "ms";
+                handleEcuPayload(lastSegment, payload);
             }
         }
     }
@@ -115,6 +81,84 @@ void MqttSetup::MqttMessageReceivedPrimary(String &topic, String &payload)
     strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);
     newMessage[sizeof(newMessage) - 1] = '\0'; // Ensure null-termination
     newMessageAvailable = true;
+}
+
+/**
+ * @brief Handles the GPS payload based on the last segment of the topic.
+ * 
+ * This function processes the payload string according to the last segment of the topic.
+ * It performs different transformations based on the value of the last segment.
+ * 
+ * @param lastSegment The last segment of the topic indicating the type of data.
+ * @param payload The payload string to be transformed.
+ * 
+ * The function handles the following segments:
+ * - "TME": Transforms the payload using the transformTime function.
+ * - "DTE": Formats the date by removing dots, adding a slash, and removing the year.
+ * - "SPD": Rounds the speed to the nearest integer and appends "kmh".
+ * - "ALT": Appends "m" to the altitude value.
+ */
+void MqttSetup::handleGpsPayload(const String &lastSegment, String &payload)
+{
+    if (lastSegment == "TME")
+    {
+        MqttSetup::transformTime(payload);
+    }
+    else if (lastSegment == "DTE")
+    {
+        // Remove dots between values, add slash, remove year. Incoming format dd.mm.yyyy
+        payload.replace(".", "");
+        String day = payload.substring(0, 2);
+        String month = payload.substring(2, 4);
+        payload = day + "/" + month;
+    }
+    else if (lastSegment == "SPD")
+    {
+        // Round the speed to the closest 1kmh + add kmh string
+        float speed = payload.toFloat();
+        payload = String(int(speed)) + "kmh";
+    }
+    else if (lastSegment == "ALT")
+    {
+        payload = payload + "m";
+    }
+}
+
+/**
+ * @brief Handles the ECU payload by appending appropriate units based on the last segment.
+ *
+ * This function modifies the payload string by appending a unit suffix based on the value of the lastSegment parameter.
+ * The following suffixes are appended:
+ * - "TPS", "VE1", "TAE": Adds '%' to the payload.
+ * - "MAT", "CAD": Adds 'C' to the payload.
+ * - "BAT": Adds 'V' to the payload.
+ * - "DWL": Adds 'ms' to the payload.
+ *
+ * @param lastSegment The last segment of the topic which determines the unit to be appended.
+ * @param payload The payload string which will be modified to include the appropriate unit.
+ */
+void MqttSetup::handleEcuPayload(const String &lastSegment, String &payload)
+{
+    if (lastSegment == "TPS" || lastSegment == "VE1" || lastSegment == "TAE")
+    {
+        // Add '%' sign to the end of the numeric value
+        payload = payload + "%";
+    }
+    else if (lastSegment == "MAT" || lastSegment == "CAD")
+    {
+        // Add 'C'
+        payload = payload + "C";
+    }
+    else if (lastSegment == "BAT")
+    {
+        // Add 'V'
+        payload = payload + "V";
+    }
+    else if (lastSegment == "DWL")
+    {
+        // Add 'ms'
+        payload = payload + "ms";
+    }
 }
 
 /**
@@ -165,41 +209,84 @@ void MqttSetup::reverseString(String &str)
     int length = str.length();
     for (int i = 0; i < length / 2; i++)
     {
-        char temp = str[i];
-        str[i] = str[length - i - 1];
-        str[length - i - 1] = temp;
+        std::swap(str[i], str[length - i - 1]);
     }
 }
 
 /**
- * Transform the time string to a specific format.
- * @param timeString The time string to transform.
+ * @brief Transforms the given time string to a specific format and optionally hides the colon.
+ * 
+ * This function first checks if the provided time string is in a valid format.
+ * If the format is invalid, it prints an error message and returns.
+ * If the format is valid, it formats the time string and optionally replaces
+ * colons with spaces based on the colonVisible flag. Finally, it toggles the
+ * visibility of the colon for future calls.
+ * 
+ * @param timeString The time string to be transformed. This parameter is modified in place.
  */
 void MqttSetup::transformTime(String &timeString)
 {
-    // Check if the timeString has the expected format "HH:MM:SS"
-    if (timeString.length() == 8 && timeString[2] == ':' && timeString[5] == ':')
-    {
-        // Extract the "HH:MM" part
-        String transformedTime = timeString.substring(0, 5);
-
-        // Replace the original timeString with the transformed one
-        timeString = transformedTime;
-
-        if (!MqttSetup::colonVisible)
-        {
-            std::replace(timeString.begin(), timeString.end(), ':', ' ');
-        }
-
-        // Blink the colon every second
-        if (millis() - lastBlinkMillis >= 1000)
-        {
-            lastBlinkMillis = millis();
-            MqttSetup::colonVisible = !MqttSetup::colonVisible; // Toggle colon visibility
-        }
-    }
-    else
+    if (!isValidTimeFormat(timeString))
     {
         Serial.println("Invalid time format: " + timeString);
+        return;
+    }
+
+    timeString = formatTimeString(timeString);
+
+    if (!MqttSetup::colonVisible)
+    {
+        std::replace(timeString.begin(), timeString.end(), ':', ' ');
+    }
+
+    toggleColonVisibility();
+}
+
+/**
+ * @brief Checks if the given time string is in a valid format.
+ *
+ * This function verifies that the provided time string follows the format "HH:MM:SS".
+ * The string must be exactly 8 characters long, with colons at the 3rd and 6th positions.
+ *
+ * @param timeString The time string to validate.
+ * @return true if the time string is in the format "HH:MM:SS", false otherwise.
+ */
+bool MqttSetup::isValidTimeFormat(const String &timeString)
+{
+    return timeString.length() == 8 && timeString[2] == ':' && timeString[5] == ':';
+}
+
+/**
+ * @brief Formats a given time string to a shorter version.
+ *
+ * This function takes a time string and returns a substring containing
+ * the first 5 characters of the input string.
+ *
+ * @param timeString The original time string to be formatted.
+ * @return A substring of the input time string containing the first 5 characters.
+ */
+String MqttSetup::formatTimeString(const String &timeString)
+{
+    return timeString.substring(0, 5);
+}
+
+/**
+ * @brief Toggles the visibility of the colon in the display.
+ *
+ * This function checks the elapsed time since the last toggle and if it has been
+ * at least 1000 milliseconds (1 second), it toggles the visibility of the colon.
+ * The function uses the current time from the `millis()` function to determine
+ * the elapsed time.
+ *
+ * @note This function should be called periodically to ensure the colon visibility
+ * is toggled at the correct intervals.
+ */
+void MqttSetup::toggleColonVisibility()
+{
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastBlinkMillis >= 1000)
+    {
+        lastBlinkMillis = currentMillis;
+        MqttSetup::colonVisible = !MqttSetup::colonVisible;
     }
 }

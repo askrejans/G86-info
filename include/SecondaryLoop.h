@@ -102,4 +102,29 @@ void displayTime(int hours, int minutes, int seconds, int hundredths);
  */
 void setTimeToMqtt(int timer, int hours, int minutes, int seconds, int hundredths);
 
+/**
+ * @brief Displays the timer value in a formatted time.
+ * @param timerValue The timer value in milliseconds.
+ */
+void displayTimer(int timerValue);
+
+/**
+ * @brief Common function to handle timer callbacks.
+ *
+ * This function increments the timer value by 10, converts the timer value to hours,
+ * minutes, seconds, and hundredths, and displays the time if the secondary screen mode
+ * matches the provided mode. Additionally, it sends the time to MQTT every 100 milliseconds.
+ *
+ * @param timerValue Reference to the timer value.
+ * @param mode The mode string to compare with the secondary screen mode.
+ * @param timerId The ID of the timer for MQTT.
+ */
+void handleTimerCallback(volatile unsigned long &timerValue, const char *mode, int timerId);
+
+/**
+ * @brief FreeRTOS task to handle timer chronometer functionality.
+ * @param parameter Pointer to the timer ID (1 or 2).
+ */
+void timerChronometer(void *parameter);
+
 #endif // SECONDARY_LOOP_H

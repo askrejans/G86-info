@@ -54,6 +54,9 @@ extern TimerHandle_t timer2Handle;
 extern bool timer1Started;
 extern bool timer2Started;
 
+extern bool timer1Paused;
+extern bool timer2Paused;
+
 extern volatile unsigned long timer1Value;
 extern volatile unsigned long timer2Value;
 

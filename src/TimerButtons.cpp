@@ -89,7 +89,7 @@ void monitorTimerSwitches()
         resetTimer(timerId);
         mqttSetup.mqtt.publish(mqttTopic + "started", "false");
         mqttSetup.mqtt.publish(mqttTopic + "paused", "false");
-        mqttSetup.mqtt.publish(mqttTopic + "value", "00-00-00:00");
+        mqttSetup.mqtt.publish(mqttTopic + "value", "00-00-00:000");
     };
 
     // Check sw1Timer state
@@ -208,26 +208,26 @@ void resetTimer(int timerNr)
     TimerHandle_t *timerHandle = nullptr;
     volatile unsigned long *timerValue = nullptr;
     bool *timerStarted = nullptr;
+    bool *timerPaused = nullptr;
 
-    if (timerNr == 1)
-    {
+    if (timerNr == 1) {
         timerHandle = &timer1Handle;
         timerValue = &timer1Value;
         timerStarted = &timer1Started;
+        timerPaused = &timer1Paused;
     }
-    else if (timerNr == 2)
-    {
+    else if (timerNr == 2) {
         timerHandle = &timer2Handle;
         timerValue = &timer2Value;
         timerStarted = &timer2Started;
+        timerPaused = &timer2Paused;
     }
 
-    if (timerHandle != nullptr && *timerHandle != NULL)
-    {
-        // Stop timer, reset value, and update status
+    if (timerHandle != nullptr && *timerHandle != NULL) {
         xTimerStop(*timerHandle, 0);
         *timerValue = 0;
         *timerStarted = false;
+        *timerPaused = false;
     }
 }
 
@@ -242,29 +242,35 @@ void pauseTimer(int timerNr)
     TimerHandle_t *timerHandle = nullptr;
     volatile unsigned long *timerValue = nullptr;
     bool *timerStarted = nullptr;
+    bool *timerPaused = nullptr;
 
-    if (timerNr == 1)
-    {
+    if (timerNr == 1) {
         timerHandle = &timer1Handle;
         timerValue = &timer1Value;
         timerStarted = &timer1Started;
+        timerPaused = &timer1Paused;
     }
-    else if (timerNr == 2)
-    {
+    else if (timerNr == 2) {
         timerHandle = &timer2Handle;
         timerValue = &timer2Value;
         timerStarted = &timer2Started;
+        timerPaused = &timer2Paused;
     }
 
-    if (timerHandle != nullptr && *timerHandle != NULL)
-    {
-        // Stop timer and update status
+    if (timerHandle != nullptr && *timerHandle != NULL) {
+        // Stop the timer first
         xTimerStop(*timerHandle, 0);
-        *timerStarted = false;
+        *timerPaused = true;
 
-        // Send exact stop value to MQTT
+        // Calculate time components
         int hours, minutes, seconds, hundredths;
         convertTimerToTime(*timerValue, hours, minutes, seconds, hundredths);
+
+        // Update both display and MQTT with the same time value
+        displayTime(hours, minutes, seconds, hundredths);
         setTimeToMqtt(timerNr, hours, minutes, seconds, hundredths);
+
+        // Ensure the timer value is preserved
+        *timerStarted = false;
     }
 }

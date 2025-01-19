@@ -6,8 +6,10 @@ unsigned long delaytime = 250;        // Delay time for scrolling animation
 // Define variables to store timer values
 volatile unsigned long timer1Value = 0;
 volatile unsigned long timer2Value = 0;
-bool timer1Started = false; // Flag to indicate if Timer 1 is started
-bool timer2Started = false; // Flag to indicate if Timer 2 is started
+bool timer1Started = false;
+bool timer2Started = false;
+bool timer1Paused = false;
+bool timer2Paused = false;
 TimerHandle_t timer1Handle;
 TimerHandle_t timer2Handle;
 
@@ -101,20 +103,18 @@ void secondaryDisplayLoop(void *parameter)
     }
     else if (strcmp(mode, "TIMER1") == 0)
     {
-      if (!timer1Started)
+      if (!timer1Started || timer1Paused)
       {
         int hours, minutes, seconds, hundredths;
         convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
-        displayTime(hours, minutes, seconds, hundredths);
       }
     }
     else if (strcmp(mode, "TIMER2") == 0)
     {
-      if (!timer2Started)
+      if (!timer2Started || timer2Paused)
       {
         int hours, minutes, seconds, hundredths;
         convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
-        displayTime(hours, minutes, seconds, hundredths);
       }
     }
 
@@ -262,7 +262,7 @@ void convertTimerToTime(unsigned long timerValue, int &hours, int &minutes, int 
  *
  * This function formats the given time components (hours, minutes, seconds, hundredths)
  * into a string and displays it on the LED display. If hours are greater than 0, the format
- * will be "HH-MM-SS". Otherwise, the format will be "MM-SS-HH".
+ * will be "HH:MM:SS". Otherwise, the format will be "MM:SS:HH".
  *
  * @param hours The hours component of the time.
  * @param minutes The minutes component of the time.
@@ -286,10 +286,11 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
   // Ensure null-termination
   timeText[sizeof(timeText) - 1] = '\0';
 
-  // Display each character of the time on the LED display
+  // Display each character of the time on the LED display in reverse order
+  int len = strlen(timeText);
   for (int j = 0; j < numDigits; j++)
   {
-    char displayChar = (j < strlen(timeText)) ? timeText[j] : ' ';
+    char displayChar = (j < len) ? timeText[len - 1 - j] : ' ';
     secondaryDisplay.setChar(0, j, displayChar, false);
   }
 }

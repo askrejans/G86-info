@@ -8,7 +8,7 @@ const uint8_t CTL_PIN = 27;  ///< Port for the main input button
 
 // Initialize rotary encoder
 MD_REncoder RE(RE_A_PIN, RE_B_PIN);
- 
+
 // Initialize switch library for the main input button
 MD_UISwitch_Digital swCtl(CTL_PIN);
 
@@ -95,13 +95,15 @@ MD_Menu::userNavAction_t navigation(uint16_t &incDelta)
   if (re != DIR_NONE)
   {
     // If it's not clockwise or counterclockwise, return increment
-    if (re != DIR_CW && re != DIR_CCW) return MD_Menu::NAV_INC;
+    if (re != DIR_CW && re != DIR_CCW)
+      return MD_Menu::NAV_INC;
 
     if (M.isInEdit())
     {
       // Adjust incDelta based on speed only in edit mode
       int speed = RE.speed();
-      if (speed < 0) speed = -speed;
+      if (speed < 0)
+        speed = -speed;
       incDelta = 1 << (speed >> 3);
     }
     else
@@ -115,25 +117,24 @@ MD_Menu::userNavAction_t navigation(uint16_t &incDelta)
   MD_UISwitch::keyResult_t keyResult = swCtl.read();
   switch (keyResult)
   {
-    case MD_UISwitch::KEY_PRESS:
-      return MD_Menu::NAV_SEL;
-    case MD_UISwitch::KEY_LONGPRESS:
-      return MD_Menu::NAV_ESC;
-    default:
-      break;
+  case MD_UISwitch::KEY_PRESS:
+    return MD_Menu::NAV_SEL;
+  case MD_UISwitch::KEY_LONGPRESS:
+    return MD_Menu::NAV_ESC;
+  default:
+    break;
   }
 
   return MD_Menu::NAV_NULL;
 }
 
-
 /**
  * @brief Initializes the navigation system for the menu.
- * 
+ *
  * This function sets up the rotary encoder and switch controller, configuring
  * various parameters such as repeat, long press, and double press timings. It
  * also enables menu wrapping.
- * 
+ *
  * @note The following configurations are applied:
  * - Repeat is disabled.
  * - Long press is enabled with a press time of 500 ms and a long press time of 1000 ms.
@@ -159,35 +160,35 @@ const String ecuDataStrings[] = {"RPM", "TPS", "VE1", "O2P", "AFT", "MAT", "CAD"
 const String gpsDataStrings[] = {"SPD", "TME", "DTE", "LAT", "LNG", "ALT", "CRS", "QTY"};
 
 // Helper to unsubscribe from both ECU and GPS topics
-void unsubscribeAll(MQTTClient& client, const char* idx)
+void unsubscribeAll(MQTTClient &client, const char *idx)
 {
   client.unsubscribe(MQTT_ECU_TOPIC + String(idx));
   client.unsubscribe(MQTT_GPS_TOPIC + String(idx));
 }
 
 // Helper to update index from array
-int findArrayIndex(const String arr[], size_t size, const char* val)
+int findArrayIndex(const String arr[], size_t size, const char *val)
 {
   for (size_t i = 0; i < size; i++)
-    if (arr[i] == val) return i;
+    if (arr[i] == val)
+      return i;
   return 0;
 }
 
-
 /**
  * @brief Handles menu value requests for various menu IDs.
- * 
+ *
  * This function processes menu value requests for different menu IDs, handling both
  * primary and secondary displays, as well as text alignment and brightness settings.
- * 
+ *
  * @param id The menu ID to process.
  * @param bGet If true, the function retrieves the current value; if false, it sets the value.
  * @return MD_Menu::value_t* Pointer to the value structure if bGet is true, otherwise nullptr.
- * 
+ *
  * The function uses two lambda functions to handle primary and secondary displays:
  * - handlePrimary: Handles non-volatile variables for the primary display.
  * - handleSecondary: Handles volatile variables for the secondary display.
- * 
+ *
  * The function processes the following menu IDs:
  * - 2: ECU primary display
  * - 3: GPS primary display
@@ -195,7 +196,7 @@ int findArrayIndex(const String arr[], size_t size, const char* val)
  * - 5: GPS secondary display
  * - 6: Text alignment
  * - 7: Brightness
- * 
+ *
  * For text alignment and brightness, the function directly modifies the display settings.
  * For other IDs, it subscribes to the appropriate MQTT topics and updates message availability.
  */
@@ -206,12 +207,14 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
   // For primary display (non-volatile vars)
   auto handlePrimary = [&](int arraySize,
                            const String arr[],
-                           char* indexRef,
-                           MQTTClient& client,
-                           char* messageRef,
-                           bool* msgAvail)
+                           char *indexRef,
+                           MQTTClient &client,
+                           char *messageRef,
+                           bool *msgAvail,
+                           const String &topic) // Add topic parameter
   {
-    if (!bGet) unsubscribeAll(client, indexRef);
+    if (!bGet)
+      unsubscribeAll(client, indexRef);
 
     if (bGet)
     {
@@ -221,8 +224,8 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
     {
       strncpy(indexRef, arr[v.value].c_str(), sizeof(dataIndex));
       indexRef[sizeof(dataIndex) - 1] = '\0';
-      client.subscribe(MQTT_ECU_TOPIC + String(indexRef)); // or MQTT_GPS_TOPIC as needed
-      Serial.println("\nSubscribed to topic: " + MQTT_ECU_TOPIC + String(indexRef));
+      client.subscribe(topic + String(indexRef));
+      Serial.println("\nSubscribed to topic: " + topic + String(indexRef));
       strcpy(messageRef, "---");
       *msgAvail = true;
     }
@@ -231,12 +234,14 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
   // For secondary display (volatile vars)
   auto handleSecondary = [&](int arraySize,
                              const String arr[],
-                             char* indexRef,
-                             MQTTClient& client,
-                             volatile char* messageRef,
-                             volatile bool* msgAvail)
+                             char *indexRef,
+                             MQTTClient &client,
+                             volatile char *messageRef,
+                             volatile bool *msgAvail,
+                             const String &topic) // Add topic parameter
   {
-    if (!bGet) unsubscribeAll(client, indexRef);
+    if (!bGet)
+      unsubscribeAll(client, indexRef);
 
     if (bGet)
     {
@@ -246,96 +251,109 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
     {
       strncpy(indexRef, arr[v.value].c_str(), sizeof(dataIndex2));
       indexRef[sizeof(dataIndex2) - 1] = '\0';
-      client.subscribe(MQTT_ECU_TOPIC + String(indexRef)); // or MQTT_GPS_TOPIC as needed
+      client.subscribe(topic + String(indexRef));
       strcpy(const_cast<char *>(secondaryScreenMode), "MQTT");
-      Serial.println("\nSubscribed to secondary: " + MQTT_ECU_TOPIC + String(indexRef));
-      strcpy((char*)messageRef, "---");
+      Serial.println("\nSubscribed to secondary: " + topic + String(indexRef));
+      strcpy((char *)messageRef, "---");
       *msgAvail = true;
     }
   };
 
   switch (id)
   {
-    case 2: // ECU primary
-      handlePrimary(
+  case 2: // ECU primary
+    handlePrimary(
         ARRAY_SIZE(ecuDataStrings),
         ecuDataStrings,
         dataIndex,
         mqttSetup.mqtt,
         newMessage,
-        &newMessageAvailable
-      );
-      break;
+        &newMessageAvailable,
+        MQTT_ECU_TOPIC);
+    break;
 
-    case 3: // GPS primary
-      handlePrimary(
+  case 3: // GPS primary
+    handlePrimary(
         ARRAY_SIZE(gpsDataStrings),
         gpsDataStrings,
         dataIndex,
         mqttSetup.mqtt,
         newMessage,
-        &newMessageAvailable
-      );
-      break;
+        &newMessageAvailable,
+        MQTT_GPS_TOPIC);
+    break;
 
-    case 4: // ECU secondary
-      handleSecondary(
+  case 4: // ECU secondary
+    handleSecondary(
         ARRAY_SIZE(ecuDataStrings),
         ecuDataStrings,
         dataIndex2,
         mqttSetup.mqtt2,
         newMessage2,
-        &newMessageAvailable2
-      );
-      break;
+        &newMessageAvailable2,
+        MQTT_ECU_TOPIC);
+    break;
 
-    case 5: // GPS secondary
-      handleSecondary(
+  case 5: // GPS secondary
+    handleSecondary(
         ARRAY_SIZE(gpsDataStrings),
         gpsDataStrings,
         dataIndex2,
         mqttSetup.mqtt2,
         newMessage2,
-        &newMessageAvailable2
-      );
-      break;
+        &newMessageAvailable2,
+        MQTT_GPS_TOPIC);
+    break;
 
-    case 6: // Text align
-      if (bGet)
+  case 6: // Text align
+    if (bGet)
+    {
+      switch (wifiSetup.config.align)
       {
-        switch (wifiSetup.config.align)
-        {
-          case PA_LEFT:   v.value = 0; break;
-          case PA_CENTER: v.value = 1; break;
-          case PA_RIGHT:  v.value = 2; break;
-        }
+      case PA_LEFT:
+        v.value = 0;
+        break;
+      case PA_CENTER:
+        v.value = 1;
+        break;
+      case PA_RIGHT:
+        v.value = 2;
+        break;
       }
-      else
+    }
+    else
+    {
+      switch (v.value)
       {
-        switch (v.value)
-        {
-          case 0: wifiSetup.config.align = PA_LEFT;   break;
-          case 1: wifiSetup.config.align = PA_CENTER; break;
-          case 2: wifiSetup.config.align = PA_RIGHT;  break;
-        }
-        mainDisplay.setTextAlignment(wifiSetup.config.align);
+      case 0:
+        wifiSetup.config.align = PA_LEFT;
+        break;
+      case 1:
+        wifiSetup.config.align = PA_CENTER;
+        break;
+      case 2:
+        wifiSetup.config.align = PA_RIGHT;
+        break;
       }
-      break;
+      mainDisplay.setTextAlignment(wifiSetup.config.align);
+    }
+    break;
 
-    case 7: // Brightness
-      if (bGet)
-      {
-        v.value = wifiSetup.config.bright;
-      }
-      else
-      {
-        wifiSetup.config.bright = v.value;
-        mainDisplay.setIntensity(wifiSetup.config.bright);
-      }
-      break;
+  case 7: // Brightness
+    if (bGet)
+    {
+      v.value = wifiSetup.config.bright;
+    }
+    else
+    {
+      wifiSetup.config.bright = v.value;
+      mainDisplay.setIntensity(wifiSetup.config.bright);
+    }
+    break;
   }
 
-  if (bGet) return &v;
+  if (bGet)
+    return &v;
   wifiSetup.paramSave();
   return nullptr;
 }
@@ -358,22 +376,22 @@ bool display(MD_Menu::userDisplayAction_t action, char *msg)
 {
   switch (action)
   {
-    case MD_Menu::DISP_INIT:
-      // nothing
-      break;
+  case MD_Menu::DISP_INIT:
+    // nothing
+    break;
 
-    case MD_Menu::DISP_CLEAR:
-      mainDisplay.displayClear();
-      break;
+  case MD_Menu::DISP_CLEAR:
+    mainDisplay.displayClear();
+    break;
 
-    case MD_Menu::DISP_L0:
-    case MD_Menu::DISP_L1:
-      mainDisplay.print(msg);
-      break;
+  case MD_Menu::DISP_L0:
+  case MD_Menu::DISP_L1:
+    mainDisplay.print(msg);
+    break;
 
-    default:
-      // optional default handling
-      break;
+  default:
+    // optional default handling
+    break;
   }
   return true;
 }

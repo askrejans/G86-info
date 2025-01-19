@@ -1,4 +1,5 @@
 #include "MqttSetup.h"
+#include "TimerButtons.h"
 
 unsigned long MqttSetup::lastBlinkMillis = 0;
 bool MqttSetup::colonVisible = true;
@@ -37,6 +38,9 @@ void MqttSetup::begin()
     }
 
     Serial.println("\nMQTT Secondary connected!");
+
+    mqtt.subscribe(MQTT_TIMER1_TOPIC + "value");
+    mqtt.subscribe(MQTT_TIMER2_TOPIC + "value");
 }
 
 /**
@@ -76,6 +80,19 @@ void MqttSetup::MqttMessageReceivedPrimary(String &topic, String &payload)
                 handleEcuPayload(lastSegment, payload);
             }
         }
+
+            if (topic == MQTT_TIMER1_TOPIC + "value" || topic == MQTT_TIMER2_TOPIC + "value")
+    {
+        unsigned long timerValue = payload.toInt();
+        if (topic == MQTT_TIMER1_TOPIC + "value" && !timer1Started)
+        {
+            timer1Value = timerValue;
+        }
+        else if (topic == MQTT_TIMER2_TOPIC + "value" && !timer2Started)
+        {
+            timer2Value = timerValue;
+        }
+    }
     }
     // Convert String to char array
     strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);

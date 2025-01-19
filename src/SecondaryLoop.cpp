@@ -101,11 +101,21 @@ void secondaryDisplayLoop(void *parameter)
     }
     else if (strcmp(mode, "TIMER1") == 0)
     {
-      displayTimer(timer1Value);
+      if (!timer1Started)
+      {
+        int hours, minutes, seconds, hundredths;
+        convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
+        displayTime(hours, minutes, seconds, hundredths);
+      }
     }
     else if (strcmp(mode, "TIMER2") == 0)
     {
-      displayTimer(timer2Value);
+      if (!timer2Started)
+      {
+        int hours, minutes, seconds, hundredths;
+        convertTimerToTime(timer2Value, hours, minutes, seconds, hundredths);
+        displayTime(hours, minutes, seconds, hundredths);
+      }
     }
 
     vTaskDelay(10);
@@ -239,12 +249,12 @@ void timer2Chronometer(void *parameter)
  */
 void convertTimerToTime(unsigned long timerValue, int &hours, int &minutes, int &seconds, int &hundredths)
 {
-    const unsigned long totalSeconds = timerValue / 1000;
+  const unsigned long totalSeconds = timerValue / 1000;
 
-    hundredths = (timerValue / 10) % 100;
-    seconds = totalSeconds % 60;
-    minutes = (totalSeconds / 60) % 60;
-    hours = (totalSeconds / 3600);
+  hundredths = (timerValue / 10) % 100;
+  seconds = totalSeconds % 60;
+  minutes = (totalSeconds / 60) % 60;
+  hours = (totalSeconds / 3600);
 }
 
 /**
@@ -273,13 +283,13 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
     snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d", minutes, seconds, hundredths);
   }
 
-  // Ensure null-termination 
+  // Ensure null-termination
   timeText[sizeof(timeText) - 1] = '\0';
 
   // Display each character of the time on the LED display
   for (int j = 0; j < numDigits; j++)
   {
-    char displayChar = (j < strlen(timeText)) ? timeText[strlen(timeText) - j - 1] : ' ';
+    char displayChar = (j < strlen(timeText)) ? timeText[j] : ' ';
     secondaryDisplay.setChar(0, j, displayChar, false);
   }
 }
@@ -298,18 +308,18 @@ void displayTime(int hours, int minutes, int seconds, int hundredths)
  */
 void setTimeToMqtt(int timer, int hours, int minutes, int seconds, int hundredths)
 {
-    char timeText[13]; // Adjusted size to accommodate thousandths
+  char timeText[13]; // Adjusted size to accommodate thousandths
 
-    // Format the time string with full thousandths of a second
-    snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d:%03d", hours, minutes, seconds, hundredths * 10);
+  // Format the time string with full thousandths of a second
+  snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d:%03d", hours, minutes, seconds, hundredths * 10);
 
-    // Publish the time to the appropriate MQTT topic
-    if (timer == 1)
-    {
-        mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("value"), timeText);
-    }
-    else if (timer == 2)
-    {
-        mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("value"), timeText);
-    }
+  // Publish the time to the appropriate MQTT topic
+  if (timer == 1)
+  {
+    mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("value"), timeText);
+  }
+  else if (timer == 2)
+  {
+    mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("value"), timeText);
+  }
 }

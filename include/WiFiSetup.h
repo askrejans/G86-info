@@ -7,15 +7,23 @@
 #include <Preferences.h>
 #include <MD_Parola.h>
 
+// Configuration constants
+#define CONFIG_VERSION 1
+#define MQTT_SERVER_SIZE 40
+#define MQTT_PORT_SIZE 6
+#define MAX_BRIGHTNESS 15
+#define DEFAULT_BRIGHTNESS 5
+
 /**
  * @brief Structure to hold configuration parameters.
  */
 struct Config
 {
-    uint8_t bright;       // Display intensity
-    textPosition_t align; // Text alignment
-    char mqtt_server[40]; // MQTT server
-    char mqtt_port[6];    // MQTT port
+    uint8_t version;              // Config version for migration
+    uint8_t bright;               // Display intensity (0-15)
+    textPosition_t align;         // Text alignment
+    char mqtt_server[MQTT_SERVER_SIZE]; // MQTT server
+    char mqtt_port[MQTT_PORT_SIZE];     // MQTT port
 };
 
 /**

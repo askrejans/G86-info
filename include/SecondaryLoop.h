@@ -6,10 +6,12 @@
 #include <MD_UISwitch.h>
 #include "LedController.hpp"
 #include "MqttSetup.h"
+#include "Constants.h"
 
-#define DIN 5
-#define CS 4
-#define CLK 15
+// Pin definitions for 7-segment display
+#define DIN SEVEN_SEG_DIN_PIN
+#define CS SEVEN_SEG_CS_PIN
+#define CLK SEVEN_SEG_CLK_PIN
 
 // External declarations for variables
 extern LedController<1, 1> secondaryDisplay;
@@ -60,8 +62,8 @@ extern bool timer2Paused;
 extern volatile unsigned long timer1Value;
 extern volatile unsigned long timer2Value;
 
-extern const String MQTT_TIMER1_TOPIC;
-extern const String MQTT_TIMER2_TOPIC;
+extern const char MQTT_TIMER1_TOPIC[];
+extern const char MQTT_TIMER2_TOPIC[];
 extern MqttSetup mqttSetup;
 
 /**

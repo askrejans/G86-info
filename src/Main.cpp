@@ -15,35 +15,37 @@
 #include "WiFiSetup.h"
 #include "MqttSetup.h"
 #include "TimerButtons.h"
+#include "SharedData.h"
+#include "Constants.h"
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <esp_task_wdt.h>
 
-// Constants for configuration
-const uint16_t MENU_TIMEOUT = 3000;
-const char *AP_NAME = "G86-INFO-AP";
-const char *WIFI_PASSWORD = "golf1986";
-const char *PRIMARY_MQTT_CLIENT_NAME = "G86-INFO";
-const char *SECONDARY_MQTT_CLIENT_NAME = "G86-INFO2";
-const char *MQTT_TOPIC_BASE = "GOLF86";
-const char *WELCOME_MSG = "Golf'86";
-const char *WELCOME_MSG2 = "GOLF'86";
+// Constants for configuration (using centralized constants)
+const uint16_t MENU_TIMEOUT = MENU_TIMEOUT_MS;
+const char *AP_NAME = WIFI_AP_NAME;
+const char *WIFI_PASSWORD = WIFI_AP_PASSWORD;
+const char *PRIMARY_MQTT_CLIENT_NAME = MQTT_CLIENT_PRIMARY;
+const char *SECONDARY_MQTT_CLIENT_NAME = MQTT_CLIENT_SECONDARY;
+const char *WELCOME_MSG = WELCOME_MSG_PRIMARY;
+const char *WELCOME_MSG2 = WELCOME_MSG_SECONDARY;
 
-// Extract this constant as it's being used in multiple places
-const String MQTT_ECU_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/ECU/";
-const String MQTT_GPS_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/GPS/";
-const String MQTT_TIMER1_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/TM1/";
-const String MQTT_TIMER2_TOPIC = "/" + String(MQTT_TOPIC_BASE) + "/TM2/";
+// MQTT topic strings - using const char* to avoid heap fragmentation
+const char MQTT_ECU_TOPIC[] = "/GOLF86/ECU/";
+const char MQTT_GPS_TOPIC[] = "/GOLF86/GPS/";
+const char MQTT_TIMER1_TOPIC[] = "/GOLF86/TM1/";
+const char MQTT_TIMER2_TOPIC[] = "/GOLF86/TM2/";
 
 // Global message buffers shared by Serial and Scrolling functions
 char notAvailableMsg[] = "..N/A..";
 bool firstRun = true;
-bool newMessageAvailable = true;
-char curMessage[128];
-char newMessage[128];
-volatile char secondaryScreenMode[] = "WELCOME";
-volatile bool newMessageAvailable2 = true;
-volatile char newMessage2[128];
+bool newMessageAvailable = false;
+char curMessage[MESSAGE_BUFFER_SIZE];
+char newMessage[MESSAGE_BUFFER_SIZE];
+
+// Volatile variables are now declared in SharedData.cpp
+// These declarations kept for backward compatibility during transition
 
 // Initialize WiFi and MQTT setup instances
 WiFiSetup wifiSetup;
@@ -51,13 +53,11 @@ MqttSetup mqttSetup;
 
 // Constants for the DOT matrix display setup
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
-#define MAX_DEVICES 4
-#define CS_PIN 21
 
 // Initialize Parola library for DOT matrix display
-MD_Parola mainDisplay = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
+MD_Parola mainDisplay = MD_Parola(HARDWARE_TYPE, DOT_MATRIX_CS_PIN, DOT_MATRIX_MAX_DEVICES);
 
-WebServer server(80);
+WebServer server(WEB_SERVER_PORT);
 
 const char* htmlPage = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -103,12 +103,18 @@ const char* htmlPage = R"rawliteral(
 </html>)rawliteral";
 
 String processor(const String& var) {
+  // Optimize by using char buffers instead of String concatenation
+  static char buffer[64];
+  
   if (var == "UPTIME") {
-    return String(millis() / 1000);
+    snprintf(buffer, sizeof(buffer), "%lu", millis() / 1000);
+    return String(buffer);
   } else if (var == "FREE_HEAP") {
-    return String(ESP.getFreeHeap());
+    snprintf(buffer, sizeof(buffer), "%u", ESP.getFreeHeap());
+    return String(buffer);
   } else if (var == "SIGNAL_STRENGTH") {
-    return String(WiFi.RSSI());
+    snprintf(buffer, sizeof(buffer), "%d dBm", WiFi.RSSI());
+    return String(buffer);
   } else if (var == "MQTT_SERVER") {
     return String(wifiSetup.config.mqtt_server);
   } else if (var == "MQTT_PORT") {
@@ -118,13 +124,23 @@ String processor(const String& var) {
 }
 
 void handleRoot() {
+  // Check if client is actually connected
+  if (!server.client() || !server.client().connected()) {
+    return;
+  }
+  
   String htmlContent = htmlPage;
   htmlContent.replace("%UPTIME%", processor("UPTIME"));
   htmlContent.replace("%FREE_HEAP%", processor("FREE_HEAP"));
   htmlContent.replace("%SIGNAL_STRENGTH%", processor("SIGNAL_STRENGTH"));
   htmlContent.replace("%MQTT_SERVER%", processor("MQTT_SERVER"));
   htmlContent.replace("%MQTT_PORT%", processor("MQTT_PORT"));
-  server.send(200, "text/html", htmlContent);
+  
+  // Send with proper headers
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+  server.send(200, "text/html; charset=utf-8", htmlContent);
 }
 
 // Setup function to initialize peripherals and tasks
@@ -139,16 +155,17 @@ void setup()
   // Initialize DOT matrix display
   mainDisplay.begin();
   mainDisplay.setIntensity(wifiSetup.config.bright);
-  mainDisplay.setCharSpacing(1);
+  mainDisplay.setCharSpacing(DOT_MATRIX_CHAR_SPACING);
 
   // Display welcome MSG
   mainDisplay.displayText(WELCOME_MSG, PA_CENTER, 0, 0, PA_PRINT, PA_NO_EFFECT);
   mainDisplay.displayAnimate();
 
   // Initialize 7 Segment secondary display
-  secondaryDisplay = LedController<1, 1>(DIN, CLK, CS);
-  secondaryDisplay.setIntensity(8);
+  secondaryDisplay = LedController<1, 1>(SEVEN_SEG_DIN_PIN, SEVEN_SEG_CLK_PIN, SEVEN_SEG_CS_PIN);
+  secondaryDisplay.setIntensity(SEVEN_SEG_DEFAULT_INTENSITY);
   secondaryDisplay.clearMatrix();
+  Serial.println("7-Segment display initialized");
 
 
 
@@ -163,21 +180,43 @@ void setup()
   M.setAutoStart(true);
   M.setTimeout(MENU_TIMEOUT);
 
+  // Initialize shared data synchronization primitives
+  initSharedData();
+
+  // Configure watchdog timer for both cores
+  esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true); // Enable panic on timeout
+  esp_task_wdt_add(NULL); // Add current task (Core 1)
+
   // Create a secondary display task on a separate core
-  xTaskCreatePinnedToCore(
+  TaskHandle_t secondaryTaskHandle = NULL;
+  BaseType_t taskCreated = xTaskCreatePinnedToCore(
       secondaryDisplayLoop,
       "secondaryDisplayLoop",
-      4096, // Stack size in bytes
+      SECONDARY_DISPLAY_STACK_SIZE, // 16KB stack to prevent overflow
       NULL, // Task input parameter
       1,    // Priority of the task
-      NULL, // Task handle.
+      &secondaryTaskHandle, // Task handle for watchdog
       0     // Core where the task should run (different from the main loop)
   );
+  
+  if (taskCreated == pdPASS && secondaryTaskHandle != NULL) {
+    // Add secondary task to watchdog
+    esp_task_wdt_add(secondaryTaskHandle);
+    Serial.println("Secondary display task created and added to watchdog");
+  } else {
+    Serial.println("ERROR: Failed to create secondary display task!");
+  }
 
-    // Initialize web server
-  server.on("/", handleRoot);
+  // Initialize web server
+  server.on("/", HTTP_GET, handleRoot);
+  
+  // 404 handler
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "404: Not Found");
+  });
+  
   server.begin();
-  Serial.println("HTTP server started");
+  Serial.println("HTTP server started on port " + String(WEB_SERVER_PORT));
 }
 
 /**
@@ -187,7 +226,10 @@ void updateMainDisplay(bool &wasInMenu, bool &firstRun, char *curMessage)
 {
   if (wasInMenu && !M.isInMenu())
   {
+    // Properly reset display when exiting menu
     mainDisplay.displayClear();
+    mainDisplay.displayReset();
+    delay(50); // Increased delay to ensure display is fully cleared
 
     if (firstRun)
     {
@@ -197,8 +239,8 @@ void updateMainDisplay(bool &wasInMenu, bool &firstRun, char *curMessage)
     }
     else
     {
-      // Display current message on subsequent runs
-      mainDisplay.displayText(curMessage, wifiSetup.config.align, 1, 150, PA_PRINT, PA_PRINT);
+      // Display current message on subsequent runs (print data, right aligned)
+      mainDisplay.displayText(curMessage, PA_RIGHT, 0, 0, PA_PRINT, PA_NO_EFFECT);
     }
 
     wasInMenu = false;
@@ -211,15 +253,28 @@ void updateMainDisplay(bool &wasInMenu, bool &firstRun, char *curMessage)
   {
     if (mainDisplay.displayAnimate())
     {
-      firstRun = false;
-
-      if (newMessageAvailable)
+      if (firstRun)
+      {
+        // After first animation completes, keep showing welcome animation until data arrives
+        firstRun = false;
+        mainDisplay.displayReset();
+      }
+      else if (newMessageAvailable)
       {
         // Update current message if new message is available
         strcpy(curMessage, newMessage);
         newMessageAvailable = false;
+        
+        // Clear and reset display before showing new message
+        mainDisplay.displayClear();
+        delay(10);
+        mainDisplay.displayText(curMessage, PA_RIGHT, 0, 0, PA_PRINT, PA_NO_EFFECT);
       }
-      mainDisplay.displayReset();
+      else
+      {
+        // Keep looping welcome animation until we get MQTT data
+        mainDisplay.displayReset();
+      }
     }
   }
 }
@@ -229,7 +284,13 @@ void updateMainDisplay(bool &wasInMenu, bool &firstRun, char *curMessage)
  */
 void loop()
 {
-  // Connect to MQTT server
+  // Check WiFi connection and reconnect if needed
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected! Attempting reconnection...");
+    wifiSetup.begin(); // This will attempt to reconnect
+  }
+
+  // Connect to MQTT server with reconnection logic
   mqttSetup.connect();
 
   static bool wasInMenu = true;
@@ -237,6 +298,13 @@ void loop()
   // Update the main display based on the current state
   updateMainDisplay(wasInMenu, firstRun, curMessage);
   monitorTimerSwitches();
+  
+  // Handle web server requests
   server.handleClient();
+  
+  // Small delay to prevent overwhelming the display controller
+  delay(2);
 
+  // Feed the watchdog timer
+  esp_task_wdt_reset();
 }

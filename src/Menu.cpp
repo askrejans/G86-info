@@ -1,10 +1,12 @@
 // Menu.cpp
 #include "Menu.h"
+#include "SharedData.h"
+#include "Constants.h"
 
-// Rotary switch and button initialization
-const uint8_t RE_A_PIN = 26; ///< Port for rotary switch A channel
-const uint8_t RE_B_PIN = 25; ///< Port for rotary switch B channel
-const uint8_t CTL_PIN = 27;  ///< Port for the main input button
+// Rotary switch and button initialization (using centralized constants)
+const uint8_t RE_A_PIN = MENU_ROTARY_A_PIN; ///< Port for rotary switch A channel
+const uint8_t RE_B_PIN = MENU_ROTARY_B_PIN; ///< Port for rotary switch B channel
+const uint8_t CTL_PIN = MENU_BUTTON_PIN;     ///< Port for the main input button
 
 // Initialize rotary encoder
 MD_REncoder RE(RE_A_PIN, RE_B_PIN);
@@ -156,21 +158,30 @@ void setupNav(void)
 }
 
 // String array for ECU and GPS Data parameters
-const String ecuDataStrings[] = {"RPM", "TPS", "VE1", "O2P", "AFT", "MAT", "CAD", "MAP", "BAT", "ADV", "PW1", "SPK", "DWL", "ILL", "BAR", "TAE", "NER", "ENG"};
-const String gpsDataStrings[] = {"SPD", "TME", "DTE", "LAT", "LNG", "ALT", "CRS", "QTY"};
+// Using const char* arrays instead of String to avoid heap allocations
+const char* const ecuDataStrings[] = {"RPM", "TPS", "VE1", "O2P", "AFT", "MAT", "CAD", "MAP", "BAT", "ADV", "PW1", "SPK", "DWL", "ILL", "BAR", "TAE", "NER", "ENG"};
+const char* const gpsDataStrings[] = {"SPD", "TME", "DTE", "LAT", "LNG", "ALT", "CRS", "QTY"};
 
 // Helper to unsubscribe from both ECU and GPS topics
 void unsubscribeAll(MQTTClient &client, const char *idx)
 {
-  client.unsubscribe(MQTT_ECU_TOPIC + String(idx));
-  client.unsubscribe(MQTT_GPS_TOPIC + String(idx));
+  // Build topic strings without String allocation
+  char topic[64];
+  
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ECU_TOPIC, idx);
+  client.unsubscribe(topic);
+  
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_GPS_TOPIC, idx);
+  client.unsubscribe(topic);
 }
 
 // Helper to update index from array
-int findArrayIndex(const String arr[], size_t size, const char *val)
+int findArrayIndex(const char* const arr[], size_t size, const char *val)
 {
+  if (val == nullptr) return 0;
+  
   for (size_t i = 0; i < size; i++)
-    if (arr[i] == val)
+    if (strcmp(arr[i], val) == 0)
       return i;
   return 0;
 }
@@ -204,14 +215,14 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
 {
   static MD_Menu::value_t v;
 
-  // For primary display (non-volatile vars)
+  // For primary display (non-volatile vars) - optimized to avoid String allocations
   auto handlePrimary = [&](int arraySize,
-                           const String arr[],
+                           const char* const arr[],
                            char *indexRef,
                            MQTTClient &client,
                            char *messageRef,
                            bool *msgAvail,
-                           const String &topic) // Add topic parameter
+                           const char *topicBase)
   {
     if (!bGet)
       unsubscribeAll(client, indexRef);
@@ -219,26 +230,41 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
     if (bGet)
     {
       v.value = findArrayIndex(arr, arraySize, indexRef);
+      if (v.value < 0) v.value = 0; // Fallback to first item if not found
     }
     else
     {
-      strncpy(indexRef, arr[v.value].c_str(), sizeof(dataIndex));
+      // Validate array index
+      if (v.value < 0 || v.value >= arraySize) {
+        Serial.printf("ERROR: Invalid array index %d (max: %d)\n", v.value, arraySize - 1);
+        return;
+      }
+      
+      strncpy(indexRef, arr[v.value], sizeof(dataIndex));
       indexRef[sizeof(dataIndex) - 1] = '\0';
-      client.subscribe(topic + String(indexRef));
-      Serial.println("\nSubscribed to topic: " + topic + String(indexRef));
-      strcpy(messageRef, "---");
+      
+      // Build topic without String allocation
+      char fullTopic[64];
+      snprintf(fullTopic, sizeof(fullTopic), "%s%s", topicBase, indexRef);
+      client.subscribe(fullTopic);
+      
+      Serial.print("\nSubscribed to topic: ");
+      Serial.println(fullTopic);
+      
+      strncpy(messageRef, "---", MESSAGE_BUFFER_SIZE - 1);
+      messageRef[MESSAGE_BUFFER_SIZE - 1] = '\0';
       *msgAvail = true;
     }
   };
 
-  // For secondary display (volatile vars)
+  // For secondary display (volatile vars) - optimized to avoid String allocations
   auto handleSecondary = [&](int arraySize,
-                             const String arr[],
+                             const char* const arr[],
                              char *indexRef,
                              MQTTClient &client,
                              volatile char *messageRef,
                              volatile bool *msgAvail,
-                             const String &topic) // Add topic parameter
+                             const char *topicBase)
   {
     if (!bGet)
       unsubscribeAll(client, indexRef);
@@ -246,15 +272,37 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
     if (bGet)
     {
       v.value = findArrayIndex(arr, arraySize, indexRef);
+      if (v.value < 0) v.value = 0; // Fallback to first item if not found
     }
     else
     {
-      strncpy(indexRef, arr[v.value].c_str(), sizeof(dataIndex2));
+      // Validate array index
+      if (v.value < 0 || v.value >= arraySize) {
+        Serial.printf("ERROR: Invalid secondary array index %d (max: %d)\n", v.value, arraySize - 1);
+        return;
+      }
+      
+      strncpy(indexRef, arr[v.value], sizeof(dataIndex2));
       indexRef[sizeof(dataIndex2) - 1] = '\0';
-      client.subscribe(topic + String(indexRef));
-      strcpy(const_cast<char *>(secondaryScreenMode), "MQTT");
-      Serial.println("\nSubscribed to secondary: " + topic + String(indexRef));
-      strcpy((char *)messageRef, "---");
+      
+      // Build topic without String allocation
+      char fullTopic[64];
+      snprintf(fullTopic, sizeof(fullTopic), "%s%s", topicBase, indexRef);
+      client.subscribe(fullTopic);
+      
+      // Thread-safe mode setting
+      if (!g_secondaryMode.set("MQTT")) {
+        Serial.println("WARNING: Failed to set secondary mode to MQTT");
+        // Fallback to legacy volatile
+        strncpy((char*)secondaryScreenMode, "MQTT", MODE_BUFFER_SIZE - 1);
+        ((char*)secondaryScreenMode)[MODE_BUFFER_SIZE - 1] = '\0';
+      }
+      
+      Serial.print("\nSubscribed to secondary: ");
+      Serial.println(fullTopic);
+      
+      strncpy((char *)messageRef, "---", MESSAGE_BUFFER_SIZE - 1);
+      ((char*)messageRef)[MESSAGE_BUFFER_SIZE - 1] = '\0';
       *msgAvail = true;
     }
   };
@@ -350,6 +398,10 @@ MD_Menu::value_t *mnuValueRqst(MD_Menu::mnuId_t id, bool bGet)
       mainDisplay.setIntensity(wifiSetup.config.bright);
     }
     break;
+
+  default:
+    Serial.printf("ERROR: Unknown menu ID: %d\n", id);
+    return nullptr;
   }
 
   if (bGet)

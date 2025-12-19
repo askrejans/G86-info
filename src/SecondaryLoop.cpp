@@ -1,7 +1,9 @@
 #include "SecondaryLoop.h"
+#include "SharedData.h"
+#include <esp_task_wdt.h>
 
 LedController<1, 1> secondaryDisplay; // Secondary 7-segment LED display
-unsigned long delaytime = 250;        // Delay time for scrolling animation
+unsigned long delaytime = 300;        // Delay time for scrolling animation (increased for stability)
 
 // Define variables to store timer values
 volatile unsigned long timer1Value = 0;
@@ -40,10 +42,13 @@ void scrollGolf86On7Segment()
       secondaryDisplay.setChar(0, j, displayChar, false);
     }
 
-    vTaskDelay(delaytime);
+    vTaskDelay(pdMS_TO_TICKS(delaytime));
+    
+    // Feed watchdog during long scroll operations
+    esp_task_wdt_reset();
   }
 
-  vTaskDelay(1000);
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 /**
@@ -57,6 +62,12 @@ void scrollGolf86On7Segment()
  */
 void showText(const char *text)
 {
+  // Add NULL pointer check
+  if (text == NULL) {
+    Serial.println("ERROR: showText received NULL pointer");
+    return;
+  }
+  
   const int numDigits = 8; // Number of digits on the display
   int textLength = strlen(text);
 
@@ -79,29 +90,40 @@ void showText(const char *text)
  * - "TIMER1": Displays the time for timer1.
  * - "TIMER2": Displays the time for timer2.
  *
- * The function uses FreeRTOS's `vTaskDelay` to delay the loop by 10 ticks.
+ * The function uses FreeRTOS's `vTaskDelay` to delay the loop by DISPLAY_UPDATE_INTERVAL_MS.
  *
  * @param parameter Pointer to the parameters passed to the task (unused).
  */
 void secondaryDisplayLoop(void *parameter)
 {
+  char currentMode[MODE_BUFFER_SIZE];
+  char messageBuffer[MESSAGE_BUFFER_SIZE];
+
   while (1)
   {
-    const char *mode = const_cast<char *>(secondaryScreenMode);
+    // Thread-safe mode reading
+    if (!g_secondaryMode.get(currentMode, sizeof(currentMode))) {
+      // Fallback to legacy volatile if mutex fails
+      strncpy(currentMode, (const char*)secondaryScreenMode, sizeof(currentMode) - 1);
+      currentMode[sizeof(currentMode) - 1] = '\0';
+    }
 
-    if (strcmp(mode, "WELCOME") == 0)
+    if (strcmp(currentMode, "WELCOME") == 0)
     {
       scrollGolf86On7Segment();
     }
-    else if (strcmp(mode, "MQTT") == 0)
+    else if (strcmp(currentMode, "MQTT") == 0)
     {
-      if (newMessageAvailable2)
+      // Thread-safe message reading
+      if (g_secondaryMessage.isAvailable())
       {
-        showText(const_cast<char *>(newMessage2));
-        newMessageAvailable2 = false;
+        if (g_secondaryMessage.getMessage(messageBuffer, sizeof(messageBuffer))) {
+          showText(messageBuffer);
+          g_secondaryMessage.clearAvailable();
+        }
       }
     }
-    else if (strcmp(mode, "TIMER1") == 0)
+    else if (strcmp(currentMode, "TIMER1") == 0)
     {
       if (!timer1Started || timer1Paused)
       {
@@ -109,7 +131,7 @@ void secondaryDisplayLoop(void *parameter)
         convertTimerToTime(timer1Value, hours, minutes, seconds, hundredths);
       }
     }
-    else if (strcmp(mode, "TIMER2") == 0)
+    else if (strcmp(currentMode, "TIMER2") == 0)
     {
       if (!timer2Started || timer2Paused)
       {
@@ -118,7 +140,10 @@ void secondaryDisplayLoop(void *parameter)
       }
     }
 
-    vTaskDelay(10);
+    // Feed watchdog timer for this task
+    esp_task_wdt_reset();
+    
+    vTaskDelay(pdMS_TO_TICKS(DISPLAY_UPDATE_INTERVAL_MS));
   }
 }
 
@@ -150,11 +175,18 @@ void displayTimer(int timerValue)
  */
 void handleTimerCallback(volatile unsigned long &timerValue, const char *mode, int timerId)
 {
-  timerValue += 10;
+  // Overflow protection - cap at ~11 hours
+  if (timerValue < MAX_TIMER_VALUE_MS) {
+    timerValue += 10;
+  } else {
+    Serial.printf("WARNING: Timer %d reached maximum value\n", timerId);
+  }
+
   int hours, minutes, seconds, hundredths;
   convertTimerToTime(timerValue, hours, minutes, seconds, hundredths);
 
-  if (strcmp(const_cast<char *>(secondaryScreenMode), mode) == 0)
+  // Thread-safe mode checking
+  if (g_secondaryMode.equals(mode))
   {
     displayTime(hours, minutes, seconds, hundredths);
   }
@@ -208,13 +240,31 @@ void timerChronometer(void *parameter)
   TimerHandle_t &timerHandle = (timerId == 1) ? timer1Handle : timer2Handle;
   TimerCallbackFunction_t timerCallback = (timerId == 1) ? timer1Callback : timer2Callback;
 
-  while (strcmp(const_cast<char *>(secondaryScreenMode), mode) != 0)
+  // Wait until mode is set correctly (thread-safe)
+  while (!g_secondaryMode.equals(mode))
   {
-    vTaskDelay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 
+  // Delete existing timer if it exists to prevent memory leak
+  if (timerHandle != NULL) {
+    xTimerStop(timerHandle, 0);
+    xTimerDelete(timerHandle, 0);
+    timerHandle = NULL;
+    Serial.printf("Deleted existing timer for %s\n", mode);
+  }
+
+  // Create and start new timer
   timerHandle = xTimerCreate(mode, pdMS_TO_TICKS(10), pdTRUE, nullptr, timerCallback);
-  xTimerStart(timerHandle, 0);
+  if (timerHandle != NULL) {
+    if (xTimerStart(timerHandle, 0) == pdPASS) {
+      Serial.printf("Timer %s started successfully\n", mode);
+    } else {
+      Serial.printf("ERROR: Failed to start timer %s\n", mode);
+    }
+  } else {
+    Serial.printf("ERROR: Failed to create timer %s\n", mode);
+  }
 
   vTaskDelete(nullptr);
 }
@@ -225,7 +275,7 @@ void timerChronometer(void *parameter)
  */
 void timer1Chronometer(void *parameter)
 {
-  int timerId = 1;
+  static int timerId = 1;  // Static to persist beyond function scope
   timerChronometer(&timerId);
 }
 
@@ -235,7 +285,7 @@ void timer1Chronometer(void *parameter)
  */
 void timer2Chronometer(void *parameter)
 {
-  int timerId = 2;
+  static int timerId = 2;  // Static to persist beyond function scope
   timerChronometer(&timerId);
 }
 
@@ -314,13 +364,16 @@ void setTimeToMqtt(int timer, int hours, int minutes, int seconds, int hundredth
   // Format the time string with full thousandths of a second
   snprintf(timeText, sizeof(timeText), "%02d-%02d-%02d:%03d", hours, minutes, seconds, hundredths * 10);
 
-  // Publish the time to the appropriate MQTT topic
+  // Publish the time to the appropriate MQTT topic (without String allocation)
+  char topic[48];
   if (timer == 1)
   {
-    mqttSetup.mqtt.publish(MQTT_TIMER1_TOPIC + String("value"), timeText);
+    snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER1_TOPIC);
+    mqttSetup.mqtt.publish(topic, timeText);
   }
   else if (timer == 2)
   {
-    mqttSetup.mqtt.publish(MQTT_TIMER2_TOPIC + String("value"), timeText);
+    snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER2_TOPIC);
+    mqttSetup.mqtt.publish(topic, timeText);
   }
 }

@@ -56,8 +56,10 @@ void setupNav(void);
 extern MD_Parola mainDisplay;
 extern WiFiSetup wifiSetup;
 extern MqttSetup mqttSetup;
-extern const String MQTT_ECU_TOPIC;
-extern const String MQTT_GPS_TOPIC;
+
+// MQTT topic strings (const char arrays)
+extern const char MQTT_ECU_TOPIC[];
+extern const char MQTT_GPS_TOPIC[];
 extern volatile char secondaryScreenMode[];
 
 #endif  // MENU_H

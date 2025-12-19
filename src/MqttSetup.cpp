@@ -1,55 +1,114 @@
 #include "MqttSetup.h"
 #include "TimerButtons.h"
+#include "SharedData.h"
 
 unsigned long MqttSetup::lastBlinkMillis = 0;
 bool MqttSetup::colonVisible = true;
 
 /**
- * Initialize MQTT setup.
+ * Initialize MQTT setup with timeout and retry logic.
  */
 void MqttSetup::begin()
 {
     // Initialize MQTT connection for Primary client
-    mqtt.begin(wifiSetup.config.mqtt_server, net);
+    mqtt.begin(wifiSetup.config.mqtt_server, atoi(wifiSetup.config.mqtt_port), net);
     mqtt.onMessage(MqttMessageReceivedPrimary);
 
-    Serial.print("\nconnecting to MQTT Primary to " + String(wifiSetup.config.mqtt_server) + ":" + String(wifiSetup.config.mqtt_port));
+    Serial.printf("\nConnecting to MQTT Primary at %s:%s\n", 
+                  wifiSetup.config.mqtt_server, wifiSetup.config.mqtt_port);
 
-    // Attempt to connect to MQTT Primary
-    while (!mqtt.connect(PRIMARY_MQTT_CLIENT_NAME, "public", "public"))
+    // Attempt to connect to MQTT Primary with timeout
+    int attempts = 0;
+    while (!mqtt.connect(PRIMARY_MQTT_CLIENT_NAME, "public", "public") && 
+           attempts < MQTT_MAX_CONNECT_ATTEMPTS)
     {
         Serial.print(".");
-        delay(1000);
+        delay(MQTT_CONNECT_RETRY_DELAY_MS);
+        attempts++;
     }
 
-    Serial.println("\nMQTT Primary connected!");
+    if (mqtt.connected()) {
+        Serial.println("\nMQTT Primary connected!");
+    } else {
+        Serial.printf("\nWARNING: MQTT Primary connection failed after %d attempts. Will retry in background.\n", attempts);
+    }
 
     // Initialize MQTT connection for Secondary client
-    mqtt2.begin(wifiSetup.config.mqtt_server, net2);
+    mqtt2.begin(wifiSetup.config.mqtt_server, atoi(wifiSetup.config.mqtt_port), net2);
     mqtt2.onMessage(MqttMessageReceivedSecondary);
 
-    Serial.print("\nconnecting to MQTT Secondary to " + String(wifiSetup.config.mqtt_server) + ":" + String(wifiSetup.config.mqtt_port));
+    Serial.printf("\nConnecting to MQTT Secondary at %s:%s\n", 
+                  wifiSetup.config.mqtt_server, wifiSetup.config.mqtt_port);
 
-    // Attempt to connect to MQTT Secondary
-    while (!mqtt2.connect(SECONDARY_MQTT_CLIENT_NAME, "public", "public"))
+    // Attempt to connect to MQTT Secondary with timeout
+    attempts = 0;
+    while (!mqtt2.connect(SECONDARY_MQTT_CLIENT_NAME, "public", "public") && 
+           attempts < MQTT_MAX_CONNECT_ATTEMPTS)
     {
         Serial.print(".");
-        delay(1000);
+        delay(MQTT_CONNECT_RETRY_DELAY_MS);
+        attempts++;
     }
 
-    Serial.println("\nMQTT Secondary connected!");
+    if (mqtt2.connected()) {
+        Serial.println("\nMQTT Secondary connected!");
+    } else {
+        Serial.printf("\nWARNING: MQTT Secondary connection failed after %d attempts. Will retry in background.\n", attempts);
+    }
 
-    mqtt.subscribe(MQTT_TIMER1_TOPIC + "value");
-    mqtt.subscribe(MQTT_TIMER2_TOPIC + "value");
+    // Subscribe to timer topics if connected
+    if (mqtt.connected()) {
+        char topic[48];
+        snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER1_TOPIC);
+        mqtt.subscribe(topic);
+        snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER2_TOPIC);
+        mqtt.subscribe(topic);
+    }
 }
 
 /**
- * Handle MQTT connections for both Primary and Secondary clients.
+ * Handle MQTT connections for both Primary and Secondary clients with reconnection logic.
  */
 void MqttSetup::connect()
 {
-    mqtt.loop();
-    mqtt2.loop();
+    static unsigned long lastReconnectAttempt = 0;
+    unsigned long now = millis();
+
+    // Check and reconnect Primary client if disconnected
+    if (!mqtt.connected() && (now - lastReconnectAttempt > MQTT_RECONNECT_INTERVAL_MS)) {
+        Serial.println("MQTT Primary disconnected, attempting reconnection...");
+        if (mqtt.connect(PRIMARY_MQTT_CLIENT_NAME, "public", "public")) {
+            Serial.println("MQTT Primary reconnected!");
+            char topic[48];
+            snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER1_TOPIC);
+            mqtt.subscribe(topic);
+            snprintf(topic, sizeof(topic), "%svalue", MQTT_TIMER2_TOPIC);
+            mqtt.subscribe(topic);
+            // TODO: Resubscribe to last selected topic from menu
+        } else {
+            Serial.println("MQTT Primary reconnection failed");
+        }
+        lastReconnectAttempt = now;
+    }
+
+    // Check and reconnect Secondary client if disconnected
+    if (!mqtt2.connected() && (now - lastReconnectAttempt > MQTT_RECONNECT_INTERVAL_MS)) {
+        Serial.println("MQTT Secondary disconnected, attempting reconnection...");
+        if (mqtt2.connect(SECONDARY_MQTT_CLIENT_NAME, "public", "public")) {
+            Serial.println("MQTT Secondary reconnected!");
+            // TODO: Resubscribe to last selected topic from menu
+        } else {
+            Serial.println("MQTT Secondary reconnection failed");
+        }
+    }
+
+    // Process MQTT messages
+    if (mqtt.connected()) {
+        mqtt.loop();
+    }
+    if (mqtt2.connected()) {
+        mqtt2.loop();
+    }
 }
 
 /**
@@ -74,30 +133,39 @@ void MqttSetup::MqttMessageReceivedPrimary(String &topic, String &payload)
             if (secondLastSegment == "GPS")
             {
                 handleGpsPayload(lastSegment, payload);
+                // Convert formatted String to char array
+                strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);
+                newMessage[sizeof(newMessage) - 1] = '\0';
+                newMessageAvailable = true;
             }
             else if (secondLastSegment == "ECU")
             {
                 handleEcuPayload(lastSegment, payload);
+                // Convert formatted String to char array
+                strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);
+                newMessage[sizeof(newMessage) - 1] = '\0';
+                newMessageAvailable = true;
             }
         }
 
-            if (topic == MQTT_TIMER1_TOPIC + "value" || topic == MQTT_TIMER2_TOPIC + "value")
-    {
-        unsigned long timerValue = payload.toInt();
-        if (topic == MQTT_TIMER1_TOPIC + "value" && !timer1Started)
+        // Handle timer topics
+        char timer1Topic[48], timer2Topic[48];
+        snprintf(timer1Topic, sizeof(timer1Topic), "%svalue", MQTT_TIMER1_TOPIC);
+        snprintf(timer2Topic, sizeof(timer2Topic), "%svalue", MQTT_TIMER2_TOPIC);
+        
+        if (topic == timer1Topic || topic == timer2Topic)
         {
-            timer1Value = timerValue;
-        }
-        else if (topic == MQTT_TIMER2_TOPIC + "value" && !timer2Started)
-        {
-            timer2Value = timerValue;
+            unsigned long timerValue = payload.toInt();
+            if (topic == timer1Topic && !timer1Started)
+            {
+                timer1Value = timerValue;
+            }
+            else if (topic == timer2Topic && !timer2Started)
+            {
+                timer2Value = timerValue;
+            }
         }
     }
-    }
-    // Convert String to char array
-    strncpy(newMessage, payload.c_str(), sizeof(newMessage) - 1);
-    newMessage[sizeof(newMessage) - 1] = '\0'; // Ensure null-termination
-    newMessageAvailable = true;
 }
 
 /**
@@ -211,10 +279,20 @@ void MqttSetup::MqttMessageReceivedSecondary(String &topic, String &payload)
             }
         }
     }
-    // Convert String to char array
-    strncpy(const_cast<char *>(newMessage2), payload.c_str(), sizeof(newMessage2) - 1);
-    newMessage2[sizeof(newMessage2) - 1] = '\0'; // Ensure null-termination
-    newMessageAvailable2 = true;
+    
+    // Thread-safe message setting with size validation
+    if (payload.length() >= MESSAGE_BUFFER_SIZE) {
+        Serial.printf("WARNING: MQTT payload truncated from %d to %d chars\n", 
+                     payload.length(), MESSAGE_BUFFER_SIZE - 1);
+    }
+    
+    if (!g_secondaryMessage.setMessage(payload.c_str())) {
+        // Fallback to legacy volatile if thread-safe operation fails
+        Serial.println("WARNING: Thread-safe message set failed, using fallback");
+        strncpy((char*)newMessage2, payload.c_str(), MESSAGE_BUFFER_SIZE - 1);
+        ((char*)newMessage2)[MESSAGE_BUFFER_SIZE - 1] = '\0';
+        newMessageAvailable2 = true;
+    }
 }
 
 /**

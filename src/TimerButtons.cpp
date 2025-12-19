@@ -5,6 +5,7 @@
 
 #include "TimerButtons.h"
 #include "SecondaryLoop.h"
+#include "SharedData.h"
 
 // Global variable to store the active timer
 int activeTimer;
@@ -68,11 +69,16 @@ void setupTimerSwitches(void)
  */
 void monitorTimerSwitches()
 {
-    auto handleTimerPress = [](int timerId, bool &timerStarted, const String &mqttTopic) {
+    // Using const char* to avoid String heap allocations
+    auto handleTimerPress = [](int timerId, bool &timerStarted, const char *mqttTopicBase) {
+        char topic[48];
         if (!timerStarted)
         {
-            mqttSetup.mqtt.publish(mqttTopic + "started", "true");
-            mqttSetup.mqtt.publish(mqttTopic + "paused", "false");
+            snprintf(topic, sizeof(topic), "%sstarted", mqttTopicBase);
+            mqttSetup.mqtt.publish(topic, "true");
+            snprintf(topic, sizeof(topic), "%spaused", mqttTopicBase);
+            mqttSetup.mqtt.publish(topic, "false");
+            
             if (timerId == 1)
                 startTimer1();
             else
@@ -80,16 +86,22 @@ void monitorTimerSwitches()
         }
         else
         {
-            mqttSetup.mqtt.publish(mqttTopic + "paused", "true");
+            snprintf(topic, sizeof(topic), "%spaused", mqttTopicBase);
+            mqttSetup.mqtt.publish(topic, "true");
             pauseTimer(timerId);
         }
     };
 
-    auto handleTimerReset = [](int timerId, const String &mqttTopic) {
+    auto handleTimerReset = [](int timerId, const char *mqttTopicBase) {
+        char topic[48];
         resetTimer(timerId);
-        mqttSetup.mqtt.publish(mqttTopic + "started", "false");
-        mqttSetup.mqtt.publish(mqttTopic + "paused", "false");
-        mqttSetup.mqtt.publish(mqttTopic + "value", "00-00-00:000");
+        
+        snprintf(topic, sizeof(topic), "%sstarted", mqttTopicBase);
+        mqttSetup.mqtt.publish(topic, "false");
+        snprintf(topic, sizeof(topic), "%spaused", mqttTopicBase);
+        mqttSetup.mqtt.publish(topic, "false");
+        snprintf(topic, sizeof(topic), "%svalue", mqttTopicBase);
+        mqttSetup.mqtt.publish(topic, "00-00-00:000");
     };
 
     // Check sw1Timer state
@@ -134,11 +146,18 @@ void monitorTimerSwitches()
  */
 void startTimer(int timerId, const char *taskName, TaskFunction_t taskFunction, const char *screenMode, bool &timerStarted)
 {
-    if (xTaskCreatePinnedToCore(taskFunction, taskName, configMINIMAL_STACK_SIZE * 2, NULL, 2, NULL, 1) == pdPASS)
+    if (xTaskCreatePinnedToCore(taskFunction, taskName, TIMER_TASK_STACK_SIZE, NULL, 2, NULL, 1) == pdPASS)
     {
-        // Task creation successful
-        strcpy(const_cast<char *>(secondaryScreenMode), screenMode);
+        // Task creation successful - use thread-safe mode setting
+        if (!g_secondaryMode.set(screenMode)) {
+            Serial.printf("WARNING: Failed to set mode to %s, using fallback\n", screenMode);
+            strncpy((char*)secondaryScreenMode, screenMode, MODE_BUFFER_SIZE - 1);
+            ((char*)secondaryScreenMode)[MODE_BUFFER_SIZE - 1] = '\0';
+        }
         timerStarted = true;
+        Serial.printf("Timer task %s started successfully\n", taskName);
+    } else {
+        Serial.printf("ERROR: Failed to create timer task %s\n", taskName);
     }
 }
 
@@ -169,12 +188,17 @@ void startTimer2()
 void processTgPos(int timerId, const char *screenMode)
 {
     activeTimer = timerId;
-    // Check screen mode and update if necessary
-    if (strcmp(const_cast<char *>(secondaryScreenMode), "WELCOME") != 0 && strcmp(const_cast<char *>(secondaryScreenMode), "MQTT") != 0)
+    
+    // Check screen mode and update if necessary (thread-safe)
+    if (!g_secondaryMode.equals("WELCOME") && !g_secondaryMode.equals("MQTT"))
     {
-        if (strcmp(const_cast<char *>(secondaryScreenMode), screenMode) != 0)
+        if (!g_secondaryMode.equals(screenMode))
         {
-            strcpy(const_cast<char *>(secondaryScreenMode), screenMode);
+            if (!g_secondaryMode.set(screenMode)) {
+                Serial.printf("WARNING: Failed to set mode to %s\n", screenMode);
+                strncpy((char*)secondaryScreenMode, screenMode, MODE_BUFFER_SIZE - 1);
+                ((char*)secondaryScreenMode)[MODE_BUFFER_SIZE - 1] = '\0';
+            }
         }
     }
 }
@@ -222,12 +246,19 @@ void resetTimer(int timerNr)
         timerStarted = &timer2Started;
         timerPaused = &timer2Paused;
     }
+    else {
+        Serial.printf("ERROR: Invalid timer number: %d\n", timerNr);
+        return;
+    }
 
     if (timerHandle != nullptr && *timerHandle != NULL) {
         xTimerStop(*timerHandle, 0);
         *timerValue = 0;
         *timerStarted = false;
         *timerPaused = false;
+        Serial.printf("Timer %d reset successfully\n", timerNr);
+    } else {
+        Serial.printf("WARNING: Timer %d handle is NULL\n", timerNr);
     }
 }
 
@@ -256,6 +287,10 @@ void pauseTimer(int timerNr)
         timerStarted = &timer2Started;
         timerPaused = &timer2Paused;
     }
+    else {
+        Serial.printf("ERROR: Invalid timer number: %d\n", timerNr);
+        return;
+    }
 
     if (timerHandle != nullptr && *timerHandle != NULL) {
         // Stop the timer first
@@ -272,5 +307,8 @@ void pauseTimer(int timerNr)
 
         // Ensure the timer value is preserved
         *timerStarted = false;
+        Serial.printf("Timer %d paused at %02d:%02d:%02d.%02d\n", timerNr, hours, minutes, seconds, hundredths);
+    } else {
+        Serial.printf("WARNING: Timer %d handle is NULL\n", timerNr);
     }
 }
